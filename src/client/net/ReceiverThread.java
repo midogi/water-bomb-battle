@@ -8,13 +8,15 @@ import java.util.function.Consumer;
 public final class ReceiverThread extends Thread {
     private final Connection connection;
     private final Consumer<Message> onMessage;
+    private final Runnable onClose;
     private final Consumer<IOException> onError;
 
     public ReceiverThread(Connection connection, Consumer<Message> onMessage,
-            Consumer<IOException> onError) {
+                Runnable onClose, Consumer<IOException> onError) {
         super("server-receiver");
         this.connection = connection;
         this.onMessage = onMessage;
+        this.onClose = onClose;
         this.onError = onError;
     }
 
@@ -25,6 +27,7 @@ public final class ReceiverThread extends Thread {
             while ((message = connection.receive()) != null) {
                 onMessage.accept(message);
             }
+            onClose.run();
         } catch (IOException error) {
             onError.accept(error);
         }

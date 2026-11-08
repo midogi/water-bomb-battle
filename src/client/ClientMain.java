@@ -22,6 +22,7 @@ public final class ClientMain {
         try (Connection connection = new Connection(host, port)) {
             ReceiverThread receiver = new ReceiverThread(connection,
                     message -> System.out.println("< " + message.toWire()),
+                    () -> System.out.println("Server closed the connection.");
                     error -> System.err.println("Connection closed: " + error.getMessage()));
             receiver.setDaemon(true);
             receiver.start();
