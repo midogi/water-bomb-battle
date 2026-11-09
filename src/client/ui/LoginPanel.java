@@ -24,6 +24,7 @@ public class LoginPanel extends JPanel {
     // 입력칸을 필드로 두면 아래의 내부 리스너에서도 입력값을 읽을 수 있다.
     // 16은 입력칸의 표시 폭이다.
     private final JTextField nicknameField = new JTextField(16);
+    private final JButton enterButton = new JButton("입장");
 
     // 닉네임을 전달받을 객체를 기억한다.
     private final LoginListener loginListener;
@@ -52,7 +53,6 @@ public class LoginPanel extends JPanel {
         gbc.gridy = 2; // 세 번째 줄: 닉네임 입력칸
         add(nicknameField, gbc);
 
-        JButton enterButton = new JButton("입장");
         gbc.gridy = 3; // 네 번째 줄: 입장 버튼
         add(enterButton, gbc);
 
@@ -63,6 +63,13 @@ public class LoginPanel extends JPanel {
         // 같은 객체의 actionPerformed()가 실행된다.
         enterButton.addActionListener(listener);
         nicknameField.addActionListener(listener);
+    }
+
+    // 서버의 응답을 기다리는 동안 같은 요청을 두 번 보내지 않는다.
+    public void setConnecting(boolean connecting) {
+        nicknameField.setEnabled(!connecting);
+        enterButton.setEnabled(!connecting);
+        enterButton.setText(connecting ? "접속 중…" : "입장");
     }
 
     // 내부 클래스 방식으로 이벤트 리스너를 정의한다.

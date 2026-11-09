@@ -54,6 +54,11 @@ public class LobbyPanel extends JPanel {
         nicknameLabel.setText("닉네임: " + nickname);
     }
 
+    public void showLoading() {
+        roomModel.clear();
+        roomStatusLabel.setText("방 목록을 불러오는 중입니다.");
+    }
+
     // 전달받은 방 목록으로 화면을 갱신한다.
     // 기존 항목을 먼저 지워야 같은 목록을 두 번 받아도 방이 중복되지 않는다.
     public void setRoomNames(List<String> roomNames) {
