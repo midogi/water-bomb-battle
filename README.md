@@ -58,5 +58,11 @@ java -cp out server.game.GameDemo
 
 팀 연결고리: [midogi](https://github.com/midogi), [gksrjsgml03-create](https://github.com/gksrjsgml03-create), [yhkwon28](https://github.com/yhkwon28)
 
+| 작업 브랜치 | 담당 영역 |
+|---|---|
+| `feature/server-game` | 서버 게임 로직: 이동·충돌, 물폭탄, 피격·승패 판정 |
+| `feature/client-ui` | 클라이언트 화면과 사용자 입력 |
+| `network/dev` | 네트워크·로비: 접속, 방, 채팅. 담당자가 공유한 작업 브랜치이며 원격 반영 전 |
+
 기능별 브랜치에서 작업하고 PR로 합칩니다. 담당자는 팀 회의에서 정합니다.
 자세한 내용은 [협업 규칙](CONTRIBUTING.md), [메시지 명세](docs/PROTOCOL.md), [개발 체크리스트](docs/TODO.md), [개발 규약 원본](docs/development-rules.pdf)을 참고하세요.

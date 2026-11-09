@@ -59,7 +59,7 @@ network/dev가 올라오면 방 시작·입력·퇴장 처리에 GameLoop를 연
 ## 작업 근거
 
 - 코드 커밋: https://github.com/midogi/water-bomb-battle/commit/681fef08987b1ebede5dc5034c50bf489ed8055b
-- PR: https://github.com/midogi/water-bomb-battle/pull/1
+- PR: https://github.com/midogi/water-bomb-battle/pull/3
 - 검증 출력: [verification.txt](verification.txt)
 - 연결 방법: [SERVER_GAME.md](../../SERVER_GAME.md)
 - 기준 문서: [개발 규약](../../development-rules.pdf)
