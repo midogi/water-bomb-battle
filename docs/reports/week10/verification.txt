@@ -1,0 +1,40 @@
+2026-11-09 | JDK 22 | javac --release 17 | local tests, not multiplayer integration
+
+$ java -ea -cp out tests.ProtocolTest
+Protocol tests passed: UTF-8, delimiters, framing, EOF, invalid inputs.
+
+$ java -ea -cp out tests.GameLogicTest
+PASS 1 map serialization and validation
+PASS 2 default 4-player safe spawns
+PASS 3 held direction and STOP
+PASS 4 walls, boxes and map boundaries block movement
+PASS 5 fast movement cannot tunnel through a wall
+PASS 6 bomb limits and 60-tick fuse
+PASS 7 bomb center tile and owner walk-off
+PASS 8 wall and box stop blast propagation
+PASS 9 later bomb detonates in a chain
+PASS 10 box break happens once
+PASS 11 trap timeout produces one winner
+PASS 12 same-tick final deaths produce a draw
+PASS 13 same-tick disconnects produce a draw
+PASS 14 session identity overrides forged headers
+PASS 15 invalid inputs and full queue are rejected
+PASS 16 room isolation and immutable snapshots
+PASS 17 game messages round-trip through existing codec
+PASS 18 50ms worker starts, publishes and closes
+Game logic tests passed: 18/18
+
+$ java -ea -cp out server.game.GameDemo
+GAME_INIT|3|0|################..BBBBBBBBB..##.#B#B#B#B#B#.##BBBBBBBBBBBBB##B#B#B#B#B#B#B##BBBBBBBBBBBBB##B#B#B#B#B#B#B##BBBBBBBBBBBBB##B#B#B#B#B#B#B##BBBBBBBBBBBBB##.#B#B#B#B#B#.##..BBBBBBBBB..################|1:40:40,2:520:40,3:40:440,4:520:440
+STATE|3|0|1|1:40:40:ALIVE,2:520:40:ALIVE,3:40:440:ALIVE,4:520:440:ALIVE|1:1:60
+STATE|3|0|20|1:40:40:ALIVE,2:520:40:ALIVE,3:40:440:ALIVE,4:520:440:ALIVE|1:1:41
+STATE|3|0|40|1:40:40:ALIVE,2:520:40:ALIVE,3:40:440:ALIVE,4:520:440:ALIVE|1:1:21
+STATE|3|0|60|1:40:40:ALIVE,2:520:40:ALIVE,3:40:440:ALIVE,4:520:440:ALIVE|1:1:1
+EVENT|3|0|EXPLODE:1:1:0:1:0:1
+EVENT|3|0|TRAPPED:1
+STATE|3|0|80|1:40:40:TRAPPED,2:520:40:ALIVE,3:40:440:ALIVE,4:520:440:ALIVE|
+STATE|3|0|100|1:40:40:TRAPPED,2:520:40:ALIVE,3:40:440:ALIVE,4:520:440:ALIVE|
+STATE|3|0|120|1:40:40:TRAPPED,2:520:40:ALIVE,3:40:440:ALIVE,4:520:440:ALIVE|
+STATE|3|0|140|1:40:40:TRAPPED,2:520:40:ALIVE,3:40:440:ALIVE,4:520:440:ALIVE|
+STATE|3|0|160|1:40:40:TRAPPED,2:520:40:ALIVE,3:40:440:ALIVE,4:520:440:ALIVE|
+EVENT|3|0|DEAD:1

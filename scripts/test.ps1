@@ -7,6 +7,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Test compilation failed.' }
     & java -ea -cp out tests.ProtocolTest
     if ($LASTEXITCODE -ne 0) { throw 'Protocol tests failed.' }
+    & java -ea -cp out tests.GameLogicTest
+    if ($LASTEXITCODE -ne 0) { throw 'Game logic tests failed.' }
 } finally {
     Pop-Location
 }
