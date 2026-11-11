@@ -11,6 +11,12 @@ public final class ReceiverThread extends Thread {
     private final Runnable onClose;
     private final Consumer<IOException> onError;
 
+    /** 정상 종료 알림이 필요 없는 기존 코드용 생성자 */
+    public ReceiverThread(Connection connection, Consumer<Message> onMessage,
+            Consumer<IOException> onError) {
+        this(connection, onMessage, () -> { }, onError);
+    }
+
     public ReceiverThread(Connection connection, Consumer<Message> onMessage,
                 Runnable onClose, Consumer<IOException> onError) {
         super("server-receiver");
