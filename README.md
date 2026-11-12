@@ -45,11 +45,24 @@ tests/         공통 메시지 규약 테스트
 - 개발 예정: 방 생성·입장, 준비·시작, 이동·충돌, 물폭탄·연쇄 폭발, 아이템, 승패 판정, 채팅·이모티콘, Swing 화면
 - 현재 클라이언트는 접속 확인용 콘솔 프로그램이며 게임 화면은 아직 없습니다.
 
+서버 게임 로직 모듈은 `src/server/game/`에 별도로 구현했습니다. 이동·충돌, 물폭탄·연쇄 폭발, 갇힘·탈락, 승패 판정을 포함하며 **로비·실소켓 연결 전 단계**입니다. 네트워크 담당은 [서버 게임 로직 연결 방법](docs/SERVER_GAME.md)을 참고하세요.
+
+```powershell
+./scripts/test.ps1
+java -cp out server.game.GameDemo
+```
+
 게임 구현 시 판정은 서버가 맡고, 클라이언트는 입력을 보내고 서버 상태를 화면에 표시합니다. 서버는 50ms마다 상태를 갱신하도록 개발합니다.
 
 ## 팀과 협업
 
 팀 연결고리: [midogi](https://github.com/midogi), [gksrjsgml03-create](https://github.com/gksrjsgml03-create), [yhkwon28](https://github.com/yhkwon28)
+
+| 작업 브랜치 | 담당 영역 |
+|---|---|
+| `feature/server-game` | 서버 게임 로직: 이동·충돌, 물폭탄, 피격·승패 판정 |
+| `feature/client-ui` | 클라이언트 화면과 사용자 입력 |
+| `network/dev` | 네트워크·로비: 접속, 방, 채팅. 담당자가 공유한 작업 브랜치이며 원격 반영 전 |
 
 기능별 브랜치에서 작업하고 PR로 합칩니다. 담당자는 팀 회의에서 정합니다.
 자세한 내용은 [협업 규칙](CONTRIBUTING.md), [메시지 명세](docs/PROTOCOL.md), [개발 체크리스트](docs/TODO.md), [개발 규약 원본](docs/development-rules.pdf)을 참고하세요.
