@@ -9,11 +9,10 @@ import java.awt.event.ActionListener;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
-import javax.swing.JPanel;
 import javax.swing.JTextField;
 
 // 닉네임을 입력받고, 유효한 닉네임을 바깥에 전달하는 화면이다.
-public class LoginPanel extends JPanel {
+public class LoginPanel extends CoastPanel {
 
     // 닉네임을 전달받는 쪽이 구현할 메서드를 정한다.
     // MainFrame이 이 인터페이스를 구현한다.
