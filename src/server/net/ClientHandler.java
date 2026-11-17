@@ -6,17 +6,24 @@ import common.protocol.MsgType;
 import java.io.DataInputStream;
 import java.io.IOException;
 import java.net.Socket;
+import server.lobby.LobbyException;
+import server.lobby.Room;
+import server.lobby.RoomManager;
+
+
 
 public final class ClientHandler implements Runnable{
     private final Socket socket;
     private final int userId;
     private final SessionRegistry registry;
     private UserSession session;
+    private final RoomManager rooms;
 
-    public ClientHandler(Socket socket, int userId, SessionRegistry registry){
+    public ClientHandler(Socket socket, int userId, SessionRegistry registry, RoomManager rooms){
         this.socket = socket;
         this.userId = userId;
         this.registry = registry;
+        this.rooms = rooms;
     }
 
     @Override
@@ -33,11 +40,47 @@ public final class ClientHandler implements Runnable{
                 System.err.println("Client" + userId + " disconnected" + error.getMessage());
             } finally{
                 if (session != null) {
+                    leaveRoom();
                     registry.remove(session);
                     session.close();
                 }
             }
     }
+
+    private void handleLobby(Message request) throws LobbyException{
+        switch(request.type()) {
+            case ROOM_LIST -> reply(MsgType.ROOM_LIST, rooms.listBody());
+            case ROOM_CREATE -> sendRoomInfo(rooms.create(request.body(), session));
+            case ROOM_JOIN -> sendRoomInfo(rooms.join(parseRoomId(request.body()), session));
+            case ROOM_LEAVE -> {
+                leaveRoom();
+                reply(MsgType.ROOM_LIST, rooms.listBody());
+            }
+            default -> reply(MsgType.ERROR, "NOT_IMPLEMENTED:아직 구현하지 않은 요청입니다.");
+        }
+    }
+
+    private int parseRoomId(String body) throws LobbyException{
+        try{
+            return Integer.parseInt(body.strip());
+        } catch (NumberFormatException error) {
+            throw new LobbyException("INVALID_ROOM_ID", "방 번호를 확인하세요.");
+        }
+    }
+    private void sendRoomInfo(Room room){
+        room.broadcast(new Message(MsgType.ROOM_INFO, room.id(), 0, room.infoBody()));
+    }
+
+    private void leaveRoom(){
+        Room room = rooms.leave(session);
+        if( room == null) {
+            return;
+        }
+        room.broadcast(new Message(MsgType.PLAYER_LEFT, room.id(), 0, room.infoBody()));
+        sendRoomInfo(room);
+    }
+
+    
 
     private void handle(Message request){
         if(request.type() == MsgType.LOGIN) {
@@ -58,10 +101,12 @@ public final class ClientHandler implements Runnable{
             reply(MsgType.LOGIN_OK, Integer.toString(userId));
         } else if( !session.isLoggedIn()) {
             reply(MsgType.ERROR, "NOT_LOGGED_IN:먼저 로그인하세요");
-        } else if( request.type() == MsgType.ROOM_LIST) {
-            reply(MsgType.ROOM_LIST, "");
         } else {
-            reply(MsgType.ERROR, "NOT_IMPLEMENTED:아직 구현하지 않은 요청입니다.");
+            try {
+                handleLobby(request);
+            } catch (LobbyException error) {
+                reply(MsgType.ERROR, error.code() + ":" + error.getMessage());
+            }
         }
     }
 
