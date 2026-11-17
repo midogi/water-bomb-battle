@@ -40,10 +40,15 @@ public final class ServerPlayer {
     }
 
     boolean overlaps(GameMap.Cell cell, int candidateX, int candidateY) {
+        return overlaps(candidateX, candidateY, cell.col() * Constants.TILE_SIZE, cell.row() * Constants.TILE_SIZE);
+    }
+
+    boolean overlaps(ServerPlayer other) {
+        return overlaps(x, y, other.x, other.y);
+    }
+
+    private static boolean overlaps(int x, int y, int left, int top) {
         int size = Constants.TILE_SIZE;
-        int left = cell.col() * size;
-        int top = cell.row() * size;
-        return candidateX < left + size && candidateX + size > left
-                && candidateY < top + size && candidateY + size > top;
+        return x < left + size && x + size > left && y < top + size && y + size > top;
     }
 }

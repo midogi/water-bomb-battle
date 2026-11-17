@@ -40,6 +40,8 @@ public final class GameLogicTest {
         run("later bomb detonates in a chain", GameLogicTest::chain);
         run("box break happens once", GameLogicTest::boxBreak);
         run("trap timeout produces one winner", GameLogicTest::trapAndWin);
+        run("three-player contact eliminates only the trapped player", GameLogicTest::trappedContact);
+        run("contact resolves on the same tick as trapping", GameLogicTest::contactOnExplosion);
         run("same-tick final deaths produce a draw", GameLogicTest::draw);
         run("same-tick disconnects produce a draw", GameLogicTest::disconnect);
         run("session identity overrides forged headers", GameLogicTest::identity);
@@ -179,6 +181,61 @@ public final class GameLogicTest {
         List<Message> result = game.step(List.of());
         check(contains(result, "DEAD:1") && contains(result, "WIN:2"), "Timeout and winner");
         check(game.step(List.of()).isEmpty(), "Result is not repeated");
+    }
+
+    private static void trappedContact() {
+        GameState game = new GameState(3, map(-1, -1, '.'), List.of(
+                new ServerPlayer(1, 40, 40), new ServerPlayer(2, 120, 40),
+                new ServerPlayer(3, 200, 40)), 4);
+        game.step(List.of(new GameCommand.PlaceBomb(1)));
+        while (game.snapshot().tick() < 60) {
+            game.step(List.of());
+        }
+        check(contains(game.step(List.of()), "TRAPPED:1"), "Bomb traps player 1 at tick 61");
+
+        game.step(List.of(new GameCommand.Input(2, Direction.LEFT)));
+        while (game.snapshot().tick() < 71) {
+            game.step(List.of());
+        }
+        check(player(game, 2).x() == 80 && player(game, 1).state() == PlayerState.TRAPPED,
+                "At tick 71 the rectangles share an edge without overlapping");
+
+        List<Message> contact = game.step(List.of());
+        check(player(game, 2).x() == 76 && player(game, 1).state() == PlayerState.DEAD,
+                "At tick 72 the first overlap eliminates player 1");
+        check(contact.stream().filter(m -> m.type() == MsgType.EVENT && m.body().equals("DEAD:1")).count() == 1,
+                "Exactly one death event");
+        check(contact.stream().anyMatch(m -> m.type() == MsgType.STATE && m.body().contains("1:40:40:DEAD")),
+                "The same tick broadcasts the updated player state");
+        check(player(game, 2).state() == PlayerState.ALIVE && player(game, 3).state() == PlayerState.ALIVE
+                && contact.stream().noneMatch(m -> m.type() == MsgType.RESULT) && !game.snapshot().finished(),
+                "The other two players keep playing");
+        check(!contains(game.step(List.of(new GameCommand.Input(2, Direction.STOP))), "DEAD:1"),
+                "Continued overlap does not repeat the death event");
+    }
+
+    private static void contactOnExplosion() {
+        GameState game = new GameState(3, map(-1, -1, '.'), List.of(
+                new ServerPlayer(1, 40, 40), new ServerPlayer(2, 80, 40),
+                new ServerPlayer(3, 120, 40)), 4);
+        game.step(List.of(new GameCommand.PlaceBomb(1)));
+        game.step(List.of(new GameCommand.Input(1, Direction.DOWN), new GameCommand.Input(2, Direction.RIGHT)));
+        game.step(List.of(new GameCommand.Input(2, Direction.STOP)));
+        while (game.snapshot().tick() < 21) {
+            game.step(List.of());
+        }
+        game.step(List.of(new GameCommand.Input(1, Direction.STOP)));
+        while (game.snapshot().tick() < 60) {
+            game.step(List.of());
+        }
+        check(player(game, 2).state() == PlayerState.ALIVE && player(game, 2).x() == 84,
+                "Overlap with a player who is not trapped has no effect");
+
+        List<String> events = game.step(List.of()).stream().filter(m -> m.type() == MsgType.EVENT)
+                .map(Message::body).toList();
+        check(events.equals(List.of("EXPLODE:1:1:0:1:0:1", "TRAPPED:2", "DEAD:2")),
+                "The explosion traps player 2 and the nearby alive player eliminates them in the same tick");
+        check(player(game, 3).state() == PlayerState.ALIVE, "Player 3 stood outside the blast");
     }
 
     private static void draw() {

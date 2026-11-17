@@ -51,8 +51,7 @@ public final class GameState {
                 throw new IllegalArgumentException("Invalid spawn or duplicate userId");
             }
             for (ServerPlayer previous : players.values()) {
-                if (previous != player && Math.abs(previous.x - player.x) < Constants.TILE_SIZE
-                        && Math.abs(previous.y - player.y) < Constants.TILE_SIZE) {
+                if (previous != player && player.overlaps(previous)) {
                     throw new IllegalArgumentException("Overlapping spawn positions");
                 }
             }
@@ -129,12 +128,7 @@ public final class GameState {
             plant(players.get(userId));
         }
         explode(messages);
-        for (ServerPlayer player : players.values()) {
-            if (player.state == PlayerState.TRAPPED && tick >= player.trappedUntil) {
-                player.state = PlayerState.DEAD;
-                messages.add(message(MsgType.EVENT, "DEAD:" + player.userId()));
-            }
-        }
+        resolveTrappedPlayers(messages);
         messages.add(stateMessage());
         Judge.result(players.values()).ifPresent(result -> {
             finished = true;
@@ -235,6 +229,19 @@ public final class GameState {
                 player.direction = Direction.STOP;
                 player.trappedUntil = tick + Constants.TRAPPED_TIMEOUT_TICKS;
                 messages.add(message(MsgType.EVENT, "TRAPPED:" + player.userId()));
+            }
+        }
+    }
+
+    private void resolveTrappedPlayers(List<Message> messages) {
+        for (ServerPlayer player : players.values()) {
+            if (player.state != PlayerState.TRAPPED) {
+                continue;
+            }
+            if (tick >= player.trappedUntil || players.values().stream()
+                    .anyMatch(other -> other.state == PlayerState.ALIVE && player.overlaps(other))) {
+                player.state = PlayerState.DEAD;
+                messages.add(message(MsgType.EVENT, "DEAD:" + player.userId()));
             }
         }
     }
