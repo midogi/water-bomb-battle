@@ -24,11 +24,16 @@ public final class RoomManager {
         rooms.put(room.id(), room);
         return room;        
     }
+
     public synchronized Room join(int roomId, UserSession session) throws LobbyException {
         if(session.roomId() != Constants.LOBBY_ROOM_ID) {
             throw new LobbyException("ALREADY_IN_ROOM", "이미 방에 들어가 있습니다.");
         }
         Room room = rooms.get(roomId);
+        if(room == null) {
+            throw new LobbyException("ROOM_NOT_FOUND", "존재하지 않는 방입니다.");
+        }
+        room.add(session);
         return room;
         
     }

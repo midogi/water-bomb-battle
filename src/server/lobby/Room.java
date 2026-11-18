@@ -7,17 +7,24 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.StringJoiner;
+import java.util.ArrayList;
+import java.util.List;
+import common.protocol.MsgType;
+import server.game.GameLoop;
+import server.game.GameState;
 
 import server.net.UserSession;
 
 public final class Room{
+    private static final int MOVE_PIXELS_PER_TICK = 4;
     private final int id;
     private final String title;
     private final Map<Integer, UserSession> members = new LinkedHashMap<>();
     private final Set<Integer> ready = new LinkedHashSet<>();
     private int hostId;
     private boolean playing;
-
+    private GameLoop game;
+    
     Room(int id, String title, UserSession host){
         this.id = id;
         this.title = title;
@@ -54,11 +61,14 @@ public final class Room{
     }
 
     //준비
-    public synchronized void setReady(int userId, boolean value) {
-        if(playing || !members.containsKey(userId)) {
+    public synchronized void setReady(int userId, boolean value) throws LobbyException{
+        if(playing) {
+            throw new LobbyException("ROOM_PLAYING", "게임 중에는 준비 상태를 바꿀 수 없습니다.");
+        }
+        if(!members.containsKey(userId)) {
             return;
         }
-        if (value) {
+        if(value){
             ready.add(userId);
         } else {
             ready.remove(userId);
@@ -85,7 +95,7 @@ public final class Room{
 
     //메시지 본문 만들기
     synchronized String listEntry() {
-        return id + ":" + title + ":" + members.size() + ":" + (playing ? "PLAYING" : "WAITING");
+        return id + ":" + title + ":" + members.size() + ":" + (playing ? "PLAYING" : "WAIT");
     }
     public synchronized String infoBody() {
         StringJoiner list = new StringJoiner(",");
@@ -109,5 +119,11 @@ public final class Room{
     public synchronized void finish(){
         playing = false;
         ready.clear();
+    }
+
+    public synchronized List<Integer> startGame(int userId) throws LobbyException{
+        checkStart(userId);
+        playing = true;
+       return new ArrayList<>(members.keySet());
     }
 }
