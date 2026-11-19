@@ -4,60 +4,68 @@ import common.protocol.Message;
 import common.protocol.MessageCodec;
 import common.protocol.MsgType;
 import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.Socket;
 
-/** 접속 확인용 시작점. 방·게임 입력은 추후 세션과 방별 큐에 연결합니다. */
-public final class ClientHandler implements Runnable {
+public final class ClientHandler implements Runnable{
     private final Socket socket;
     private final int userId;
-    private String nickname;
+    private final SessionRegistry registry;
+    private UserSession session;
 
-    public ClientHandler(Socket socket, int userId) {
+    public ClientHandler(Socket socket, int userId, SessionRegistry registry){
         this.socket = socket;
         this.userId = userId;
+        this.registry = registry;
     }
 
     @Override
-    public void run() {
-        try (Socket connection = socket;
-                DataInputStream input = new DataInputStream(connection.getInputStream());
-                DataOutputStream output = new DataOutputStream(connection.getOutputStream())) {
-            Message request;
-            while ((request = MessageCodec.read(input)) != null) {
-                handle(request, output);
+    public void run(){
+        try (Socket connection = socket ;
+            DataInputStream input = new DataInputStream(connection.getInputStream())){
+                session = new UserSession(connection, userId);
+                session.start();
+                Message request;
+                while((request = MessageCodec.read(input)) != null){
+                    handle(request);
+                }
+            } catch (IOException error) {
+                System.err.println("Client" + userId + " disconnected" + error.getMessage());
+            } finally{
+                if (session != null) {
+                    registry.remove(session);
+                    session.close();
+                }
             }
-        } catch (IOException error) {
-            System.err.println("Client " + userId + " disconnected: " + error.getMessage());
-        }
     }
 
-    private void handle(Message request, DataOutputStream output) throws IOException {
-        // request.userId()/roomId()가 아닌 이 소켓에 배정된 ID와 실제 세션을 사용합니다.
-        if (request.type() == MsgType.LOGIN) {
-            if (nickname != null) {
-                reply(output, MsgType.ERROR, "ALREADY_LOGGED_IN:이미 로그인했습니다");
+    private void handle(Message request){
+        if(request.type() == MsgType.LOGIN) {
+            if(session.isLoggedIn()) {
+                reply(MsgType.ERROR, "ALREADY_LOGGED_IN:이미 로그인 했습니다.");
                 return;
             }
             String candidate = request.body().strip();
-            if (candidate.isEmpty() || candidate.indexOf('|') >= 0
-                    || candidate.indexOf(':') >= 0 || candidate.indexOf(',') >= 0) {
-                reply(output, MsgType.ERROR, "INVALID_NICK:닉네임과 구분자를 확인하세요");
+            if(candidate.isEmpty() || candidate.indexOf('|') >= 0
+                || candidate.indexOf(':') >= 0|| candidate.indexOf(',') >= 0) {
+                reply(MsgType.ERROR, "INVALID_NICK:닉네임과 구분자를 확인하세요.");
                 return;
             }
-            nickname = candidate;
-            reply(output, MsgType.LOGIN_OK, Integer.toString(userId));
-        } else if (nickname == null) {
-            reply(output, MsgType.ERROR, "NOT_LOGGED_IN:먼저 로그인하세요");
-        } else if (request.type() == MsgType.ROOM_LIST) {
-            reply(output, MsgType.ROOM_LIST, "");
+            if(!registry.register(candidate, session)) {
+                reply(MsgType.ERROR, "DUPLICATE_NICK:이미 사용 중인 닉네임입니다.");
+                return;
+            }
+            reply(MsgType.LOGIN_OK, Integer.toString(userId));
+        } else if( !session.isLoggedIn()) {
+            reply(MsgType.ERROR, "NOT_LOGGED_IN:먼저 로그인하세요");
+        } else if( request.type() == MsgType.ROOM_LIST) {
+            reply(MsgType.ROOM_LIST, "");
         } else {
-            reply(output, MsgType.ERROR, "NOT_IMPLEMENTED:아직 구현하지 않은 요청입니다");
+            reply(MsgType.ERROR, "NOT_IMPLEMENTED:아직 구현하지 않은 요청입니다.");
         }
     }
 
-    private void reply(DataOutputStream output, MsgType type, String body) throws IOException {
-        MessageCodec.write(output, new Message(type, 0, userId, body));
+    private void reply(MsgType type, String  body){
+        session.send(new Message(type, 0, userId, body));
     }
 }
