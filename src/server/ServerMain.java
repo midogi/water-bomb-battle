@@ -7,6 +7,7 @@ import java.net.Socket;
 import java.util.concurrent.atomic.AtomicInteger;
 import server.net.ClientHandler;
 import server.net.SessionRegistry;
+import server.lobby.RoomManager;
 
 public final class ServerMain {
     private ServerMain() {
@@ -16,13 +17,14 @@ public final class ServerMain {
         int port = args.length > 0 ? Integer.parseInt(args[0]) : Constants.PORT;
         AtomicInteger nextUserId = new AtomicInteger(1);
         SessionRegistry registry = new SessionRegistry();
+        RoomManager rooms = new RoomManager();
         try (ServerSocket server = new ServerSocket(port)) {
             System.out.println("Connection-link server listening on port " + server.getLocalPort());
             while (true) {
                 Socket socket = server.accept();
                 socket.setTcpNoDelay(true);
                 int userId = nextUserId.getAndIncrement();
-                new Thread(new ClientHandler(socket, userId, registry), "client-" + userId).start();
+                new Thread(new ClientHandler(socket, userId, registry, rooms), "client-" + userId).start();
             }
         }
     }
