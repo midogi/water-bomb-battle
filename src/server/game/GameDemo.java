@@ -4,7 +4,7 @@ import common.protocol.Message;
 import common.protocol.MsgType;
 import java.util.List;
 
-/** 네트워크 없이 결정적으로 실행하는 게임 로직 시연입니다. */
+/** 소켓 없이 틱을 직접 진행해 폭발과 탈락 순서를 확인하는 예제다. */
 public final class GameDemo {
     private GameDemo() { }
 
@@ -12,6 +12,7 @@ public final class GameDemo {
         GameState state = GameState.arena(3, List.of(1, 2, 3, 4), 4);
         System.out.println(state.initialMessage().toWire());
         try (GameLoop loop = new GameLoop(state, message -> { })) {
+            // 헤더 값과 상관없이 세션 ID인 1번 플레이어가 폭탄을 놓는다.
             loop.submit(1, new Message(MsgType.BOMB, 999, 999, ""));
             for (int tick = 1; tick <= 162; tick++) {
                 for (Message message : loop.advanceOneTick()) {

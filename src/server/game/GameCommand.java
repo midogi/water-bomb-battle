@@ -3,7 +3,7 @@ package server.game;
 import common.model.Direction;
 import java.util.Objects;
 
-/** userId는 소켓 세션에서 확인한 값을 넣습니다. 클라이언트 헤더 값은 사용하지 않습니다. */
+/** 소켓에서 받은 이동·설치·퇴장 요청을 게임 루프가 처리할 형태로 담는다. */
 public sealed interface GameCommand {
     int userId();
 

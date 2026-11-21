@@ -13,10 +13,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.Consumer;
 
-/** 방 하나당 인스턴스 하나. broadcaster는 소켓 쓰기 대신 송신 큐 적재 등으로 빨리 반환해야 합니다. */
+/** 방 하나의 입력을 모아 정해진 간격으로 게임 상태를 갱신한다. */
 public final class GameLoop implements AutoCloseable {
     private static final int MAX_PENDING_COMMANDS = 1024;
     private final GameState state;
+    // 소켓에 직접 쓰면서 틱이 밀리지 않도록 송신 큐에 넣는 콜백을 받는다.
     private final Consumer<Message> broadcaster;
     private final ConcurrentLinkedQueue<GameCommand> commands = new ConcurrentLinkedQueue<>();
     private final AtomicInteger pending = new AtomicInteger();
@@ -30,7 +31,7 @@ public final class GameLoop implements AutoCloseable {
         latest = state.snapshot();
     }
 
-    /** 네트워크 담당은 소켓 세션의 ID를 전달합니다. message의 두 ID 필드는 사용하지 않습니다. */
+    /** 요청을 큐에 넣는다. 플레이어는 메시지 헤더 대신 소켓 세션의 ID로 찾는다. */
     public synchronized boolean submit(int authenticatedUserId, Message message) {
         Objects.requireNonNull(message, "message");
         if (closed.get() || latest.finished() || !state.hasPlayer(authenticatedUserId)) {
@@ -56,6 +57,7 @@ public final class GameLoop implements AutoCloseable {
         return true;
     }
 
+    /** 퇴장도 입력과 함께 게임 루프에서 처리할 수 있게 큐에 넣는다. */
     public boolean playerLeft(int authenticatedUserId) {
         return submit(authenticatedUserId, new Message(MsgType.ROOM_LEAVE, 0, 0, ""));
     }
@@ -68,12 +70,13 @@ public final class GameLoop implements AutoCloseable {
         if (worker != null || closed.get() || latest.finished()) {
             throw new IllegalStateException("GameLoop cannot be started again");
         }
+        // 클라이언트에 맵과 시작 위치를 먼저 보내고 틱을 시작한다.
         broadcaster.accept(state.initialMessage());
         worker = new Thread(this::run, "game-room-loop");
         worker.start();
     }
 
-    /** start 전에는 테스트용으로 직접 틱을 진행할 수 있습니다. 실행 중에는 소유 스레드만 호출합니다. */
+    /** 시작 전에는 테스트에서 직접 틱을 진행할 수 있다. 시작 후에는 게임 스레드가 호출한다. */
     public synchronized List<Message> advanceOneTick() {
         if (worker != null && Thread.currentThread() != worker) {
             throw new IllegalStateException("Only the game thread may advance a running game");
@@ -82,7 +85,7 @@ public final class GameLoop implements AutoCloseable {
             return List.of();
         }
         List<GameCommand> batch = new ArrayList<>();
-        // 틱 시작 때 대기하던 수만 처리하여 입력 폭주가 다음 틱을 막지 않도록 합니다.
+        // 이번 틱을 시작할 때 큐에 있던 입력만 꺼낸다.
         int count = Math.min(pending.get(), MAX_PENDING_COMMANDS);
         for (int i = 0; i < count; i++) {
             GameCommand command = commands.poll();
@@ -110,7 +113,7 @@ public final class GameLoop implements AutoCloseable {
                 for (Message message : advanceOneTick()) {
                     broadcaster.accept(message);
                 }
-                // 밀린 틱을 한꺼번에 실행하여 상태 패킷이 몰리는 것을 피합니다.
+                // 처리 시간이 길어졌으면 밀린 틱을 몰아서 돌리지 않고 현재 시각부터 다시 센다.
                 next = Math.max(next, System.nanoTime());
             }
         } finally {
@@ -135,6 +138,7 @@ public final class GameLoop implements AutoCloseable {
         pending.set(0);
         Thread thread = worker;
         if (thread != null) {
+            // 다음 틱을 기다리는 중이면 깨워 바로 종료하게 한다.
             thread.interrupt();
         }
     }

@@ -14,7 +14,7 @@ public final class ExplosionCalc {
     private ExplosionCalc() {
     }
 
-    /** 벽 직전에서 멈추고, 상자는 범위에 포함한 뒤 멈춥니다. map은 같은 틱의 스냅샷입니다. */
+    /** 폭탄이 놓인 칸을 포함해 상하좌우로 닿는 칸과 방향별 거리를 구한다. */
     public static Blast calculate(GameMap map, Bomb bomb) {
         Set<GameMap.Cell> cells = new LinkedHashSet<>();
         cells.add(bomb.cell());
@@ -31,6 +31,7 @@ public final class ExplosionCalc {
             int col = bomb.col() + dx * step;
             int row = bomb.row() + dy * step;
             char tile = map.tile(col, row);
+            // 벽은 범위에 넣기 전에 멈춘다. 상자는 맞아야 부서지므로 범위에 넣고 멈춘다.
             if (tile == '#') {
                 break;
             }
