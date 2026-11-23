@@ -5,6 +5,7 @@ import java.util.List;
 
 // 제목이 같은 방도 ID로 구분할 수 있도록 목록 한 줄의 정보를 함께 보관한다.
 record RoomSummary(int id, String title, int count, String status) {
+    /** LobbySession이 ROOM_LIST를 받으면 방 번호, 제목, 인원, 상태로 나눠 로비에 전달할 목록을 만든다. */
     static List<RoomSummary> parseList(String body) {
         List<RoomSummary> rooms = new ArrayList<>();
         if (!body.isEmpty()) {
@@ -20,6 +21,7 @@ record RoomSummary(int id, String title, int count, String status) {
         return List.copyOf(rooms);
     }
 
+    /** Swing의 방 목록이 각 항목을 그릴 때 사용할 표시 문구다. 화면에 보이는 문구와 별도로 방 번호는 입장 요청에 쓰인다. */
     @Override
     public String toString() {
         String state = switch (status) {
