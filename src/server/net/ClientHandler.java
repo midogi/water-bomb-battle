@@ -9,7 +9,9 @@ import java.net.Socket;
 import server.lobby.LobbyException;
 import server.lobby.Room;
 import server.lobby.RoomManager;
+import common.Constants;
 import common.protocol.ErrorCode;
+import common.Constants;
 
 
 public final class ClientHandler implements Runnable{
@@ -51,7 +53,7 @@ public final class ClientHandler implements Runnable{
     }
 
     private void handleLobby(Message request) throws LobbyException{
-        switch(request.type()) {
+        switch(request.type()) {  
             case ROOM_LIST -> reply(MsgType.ROOM_LIST, rooms.listBody());
             case ROOM_CREATE -> sendRoomInfo(rooms.create(request.body(), session));
             case ROOM_JOIN -> sendRoomInfo(rooms.join(parseRoomId(request.body()), session));
@@ -70,7 +72,6 @@ public final class ClientHandler implements Runnable{
             }
             case INPUT, BOMB -> currentRoom().submitGameInput(userId, request);
             case CHAT -> {
-                Room room = currentRoom();
                 String text = request.body().strip();
                 if(text.isEmpty()) {
                     throw new LobbyException(ErrorCode.EMPTY_CHAT);
@@ -78,14 +79,14 @@ public final class ClientHandler implements Runnable{
                 if(text.length() > MAX_CHAT_LENGTH) {
                     throw new LobbyException(ErrorCode.CHAT_TOO_LONG);
                 }
-                room.broadcast(new Message(MsgType.CHAT, room.id(), 0, userId + ":" + session.nickname() + "|" + text));
-            }
-                case EMOJI -> {
+                String body = userId + ":" + session.nickname() + "|" + text;
+                if(session.roomId() == Constants.LOBBY_ROOM_ID) {
+                    registry.broadcastToLobby(new Message(MsgType.CHAT, Constants.LOBBY_ROOM_ID, 0, body));
+                } else {
                     Room room = currentRoom();
-                    int emoji = parseEmoji(request.body());
-                    room.broadcast(new Message(MsgType.EMOJI, room.id(), 0, userId + ":" + emoji));
+                    room.broadcast(new Message(MsgType.CHAT, room.id(), 0, body));
                 }
-                default -> throw new LobbyException(ErrorCode.INVALID_REQUEST);
+                }
             }
         }
 
