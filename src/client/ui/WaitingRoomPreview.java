@@ -14,14 +14,13 @@ import java.awt.event.WindowEvent;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import javax.swing.JFrame;
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import server.game.GameLoop;
-import server.game.GameMap;
 import server.game.GameState;
-import server.game.ServerPlayer;
 
 // 두 창이 한 방을 공유한다. 모든 예시 요청은 Swing 이벤트 스레드에서 순서대로 처리한다.
 public final class WaitingRoomPreview {
@@ -150,9 +149,8 @@ public final class WaitingRoomPreview {
             reject(id, "모두 캐릭터를 선택하고 준비한 뒤 방장이 시작할 수 있습니다.");
             return;
         }
-        GameMap map = GameMap.fromRows(selectedMap.rows());
-        GameState state = new GameState(ROOM_ID, map,
-                List.of(new ServerPlayer(1, 40, 40), new ServerPlayer(2, 520, 440)), 4);
+        List<Integer> participantIds = room.members().stream().map(RoomInfo.Member::id).toList();
+        GameState state = GameState.arena(ROOM_ID, selectedMap.layout(), participantIds, 4);
         loop = new GameLoop(state, message -> { });
         GameLoop round = loop;
         GameBoard board = GameBoard.parse(state.initialMessage().body());
@@ -160,7 +158,8 @@ public final class WaitingRoomPreview {
             view.game = new GamePanel(direction -> round.submit(playerId,
                     new Message(MsgType.INPUT, ROOM_ID, playerId, direction.name())),
                     () -> round.submit(playerId, new Message(MsgType.BOMB, ROOM_ID, playerId, "")));
-            view.match = new MatchScreen(view.game, () -> returnToWaitingRoom(playerId));
+            view.match = new MatchScreen(view.game, () -> returnToWaitingRoom(playerId),
+                    item -> round.useItem(playerId, item));
             view.match.start(board, playerId, room.appearances());
             view.frame.setContentPane(view.match);
             view.frame.pack();
@@ -172,6 +171,7 @@ public final class WaitingRoomPreview {
                 if (message.type() == MsgType.STATE) {
                     var frameState = GameBoard.parseState(message.body());
                     views.values().forEach(view -> view.match.updateState(frameState));
+                    updateItems(round.snapshot());
                 } else if (message.type() == MsgType.EVENT) {
                     views.values().forEach(view -> view.game.applyMapEvent(message.body()));
                 } else if (message.type() == MsgType.RESULT) {
@@ -186,6 +186,19 @@ public final class WaitingRoomPreview {
             }
         });
         timer.start();
+    }
+
+    private void updateItems(GameState.Snapshot snapshot) {
+        var ground = snapshot.groundItems().entrySet().stream()
+                .map(entry -> new GamePanel.ItemMarker(entry.getKey().col(), entry.getKey().row(), entry.getValue()))
+                .toList();
+        views.forEach((id, view) -> {
+            var hidden = snapshot.players().stream().map(GameState.PlayerView::userId)
+                    .filter(target -> !snapshot.canSee(id, target)).collect(Collectors.toSet());
+            var items = snapshot.playerItems().get(id);
+            view.game.updateItems(ground, hidden);
+            view.match.updateInventory(items.inventory(), items.invisible(), items.hasLens());
+        });
     }
 
     /** 창과 방 참가 정보는 그대로 두고 이 참가자만 대기실로 이동한다. 도중 복귀는 이번 경기에서만 기권한다. */

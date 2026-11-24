@@ -1,7 +1,11 @@
 package tests;
 
+import client.game.CoastMap;
+import client.game.GameBoard;
 import common.Constants;
+import common.model.ArenaMap;
 import common.model.Direction;
+import common.model.ItemType;
 import common.model.PlayerState;
 import common.protocol.Message;
 import common.protocol.MessageCodec;
@@ -13,6 +17,7 @@ import java.io.DataOutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Random;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import server.game.Bomb;
@@ -31,6 +36,7 @@ public final class GameLogicTest {
     public static void main(String[] args) throws Exception {
         run("map serialization and validation", GameLogicTest::mapValidation);
         run("default 4-player safe spawns", GameLogicTest::defaultSpawns);
+        run("nine shared maps initialize 2, 3 and 4 real player IDs", GameLogicTest::selectedMapSpawns);
         run("held direction and STOP", GameLogicTest::movement);
         run("walls, boxes and map boundaries block movement", GameLogicTest::collision);
         run("fast movement cannot tunnel through a wall", GameLogicTest::tunneling);
@@ -39,6 +45,10 @@ public final class GameLogicTest {
         run("wall and box stop blast propagation", GameLogicTest::blastStops);
         run("later bomb detonates in a chain", GameLogicTest::chain);
         run("box break happens once", GameLogicTest::boxBreak);
+        run("one crate drop goes to one player", GameLogicTest::itemPickup);
+        run("invisibility and lens have separate expiry times", GameLogicTest::visibilityItems);
+        run("needle is consumed only when escaping a trap", GameLogicTest::needle);
+        run("dart stops at a wall and triggers a clear target early", GameLogicTest::dart);
         run("trap timeout produces one winner", GameLogicTest::trapAndWin);
         run("three-player contact eliminates only the trapped player", GameLogicTest::trappedContact);
         run("contact resolves on the same tick as trapping", GameLogicTest::contactOnExplosion);
@@ -68,6 +78,23 @@ public final class GameLogicTest {
         check(game.snapshot().players().size() == 4, "Four players");
         String[] init = game.initialMessage().body().split("[|]", 2);
         check(init[0].length() == 195 && init[1].contains("40:520:440"), "Map and spawns");
+    }
+
+    private static void selectedMapSpawns() {
+        List<Integer> ids = List.of(17, 82, 103, 221);
+        for (CoastMap theme : CoastMap.values()) {
+            ArenaMap layout = theme.layout();
+            for (int count = 2; count <= 4; count++) {
+                GameState game = GameState.arena(3, layout, ids.subList(0, count), 4);
+                GameBoard board = GameBoard.parse(game.initialMessage().body());
+                check(CoastMap.matching(board.tiles()) == theme, "Client and server share the selected layout");
+                check(board.players().stream().map(GameBoard.Player::id).toList().equals(ids.subList(0, count)),
+                        "GAME_INIT uses the IDs that joined the room");
+                Message update = game.step(List.of(new GameCommand.PlaceBomb(ids.get(0)))).stream()
+                        .filter(message -> message.type() == MsgType.STATE).findFirst().orElseThrow();
+                check(GameBoard.parseState(update.body()).balloons().size() == 1, "Selected map supports placement");
+            }
+        }
     }
 
     private static void movement() {
@@ -153,7 +180,7 @@ public final class GameLogicTest {
 
     private static void boxBreak() {
         GameState game = new GameState(3, map(2, 1, 'B'),
-                List.of(new ServerPlayer(1, 40, 40), new ServerPlayer(2, 520, 440)), 4);
+                List.of(new ServerPlayer(1, 40, 40), new ServerPlayer(2, 520, 440)), 4, fixedDrops());
         game.step(List.of(new GameCommand.PlaceBomb(1)));
         while (game.snapshot().tick() < 60) {
             game.step(List.of());
@@ -162,6 +189,142 @@ public final class GameLogicTest {
         check(events.stream().filter(m -> m.body().equals("BOX_BREAK:2:1:NONE")).count() == 1,
                 "One box event");
         check(game.initialMessage().body().charAt(17) == '.', "Destroyed box becomes empty");
+    }
+
+    private static void itemPickup() {
+        GameState game = crateGame(ItemType.NEEDLE, false);
+        GameState.Snapshot beforePickup = game.snapshot();
+        check(beforePickup.groundItems().get(new GameMap.Cell(2, 1)) == ItemType.NEEDLE, "Crate drops a needle");
+        move(game, 1, Direction.RIGHT);
+        move(game, 1, Direction.UP);
+        List<Message> events = game.step(List.of(new GameCommand.Input(2, Direction.LEFT)));
+        check(events.stream().filter(m -> m.body().equals("ITEM_GET:1:2:1:NEEDLE")).count() == 1,
+                "Earlier participant gets the contested item once");
+        check(game.snapshot().groundItems().isEmpty() && inventory(game, 1, ItemType.NEEDLE) == 1
+                && inventory(game, 2, ItemType.NEEDLE) == 0, "Only one inventory changes");
+        check(beforePickup.groundItems().size() == 1 && beforePickup.playerItems().get(1).inventory().isEmpty(),
+                "Previous snapshot is unaffected by pickup");
+    }
+
+    private static void visibilityItems() {
+        String[] rows = mapRows(2, 3, 'B');
+        rows[3] = rows[3].substring(0, 4) + 'B' + rows[3].substring(5);
+        GameState game = new GameState(3, GameMap.fromRows(rows),
+                List.of(new ServerPlayer(1, 120, 120), new ServerPlayer(2, 200, 120)), 40,
+                fixedDrops(ItemType.INVISIBILITY, ItemType.LENS));
+        game.step(List.of(new GameCommand.PlaceBomb(1)));
+        move(game, 1, Direction.UP);
+        game.step(List.of());
+        move(game, 1, Direction.STOP);
+        advanceTo(game, 61);
+        game.step(List.of(new GameCommand.Input(1, Direction.LEFT), new GameCommand.Input(2, Direction.LEFT)));
+        game.step(List.of(new GameCommand.Input(1, Direction.DOWN), new GameCommand.Input(2, Direction.STOP)));
+        game.step(List.of());
+        game.step(List.of(new GameCommand.Input(1, Direction.STOP), new GameCommand.UseItem(1, ItemType.INVISIBILITY)));
+        long invisibleTick = game.snapshot().tick();
+        check(!game.snapshot().canSee(2, 1) && game.snapshot().canSee(1, 1), "Only the opponent loses sight");
+        check(inventory(game, 1, ItemType.INVISIBILITY) == 0, "Invisibility consumed");
+        game.step(List.of(new GameCommand.UseItem(2, ItemType.LENS)));
+        check(game.snapshot().canSee(2, 1) && inventory(game, 2, ItemType.LENS) == 0, "Lens reveals hidden opponent");
+        advanceTo(game, invisibleTick + 99);
+        check(game.snapshot().playerItems().get(1).invisible(), "Invisibility lasts through its last tick");
+        game.step(List.of());
+        check(!game.snapshot().playerItems().get(1).invisible() && game.snapshot().playerItems().get(2).hasLens(),
+                "Invisibility expires before the later lens");
+        game.step(List.of());
+        check(!game.snapshot().playerItems().get(2).hasLens(), "Lens expires independently");
+    }
+
+    private static void needle() {
+        GameState game = collectCrateItem(ItemType.NEEDLE, false);
+        game.step(List.of(new GameCommand.UseItem(1, ItemType.NEEDLE), new GameCommand.PlaceBomb(1)));
+        check(inventory(game, 1, ItemType.NEEDLE) == 1, "An alive player keeps the needle");
+        advanceTo(game, game.snapshot().bombs().get(0).explodeAtTick());
+        check(player(game, 1).state() == PlayerState.TRAPPED, "Player is trapped before using needle");
+        long oldTimeout = game.snapshot().tick() + Constants.TRAPPED_TIMEOUT_TICKS;
+        try (GameLoop loop = new GameLoop(game, message -> { })) {
+            check(loop.useItem(1, ItemType.NEEDLE), "Preview can queue needle use");
+            check(contains(loop.advanceOneTick(), "ITEM_USED:1:NEEDLE"), "Needle announces successful escape");
+            check(player(game, 1).state() == PlayerState.ALIVE && inventory(game, 1, ItemType.NEEDLE) == 0,
+                    "Needle restores player, then consumes one item");
+        }
+        advanceTo(game, oldTimeout);
+        check(player(game, 1).state() == PlayerState.ALIVE, "Old trap timeout cannot eliminate the escaped player");
+    }
+
+    private static void dart() {
+        GameState game = collectCrateItem(ItemType.DART, true);
+        game.step(List.of(new GameCommand.PlaceBomb(1)));
+        long scheduled = game.snapshot().bombs().get(0).explodeAtTick();
+        move(game, 1, Direction.DOWN);
+        move(game, 1, Direction.RIGHT);
+        game.step(List.of());
+        move(game, 1, Direction.UP);
+        game.step(List.of(new GameCommand.Input(1, Direction.LEFT), new GameCommand.Input(1, Direction.STOP),
+                new GameCommand.UseItem(1, ItemType.DART)));
+        check(inventory(game, 1, ItemType.DART) == 1 && game.snapshot().bombs().size() == 1,
+                "Wall blocks the dart without consuming it");
+        move(game, 1, Direction.DOWN);
+        move(game, 1, Direction.LEFT);
+        game.step(List.of());
+        List<Message> hit = game.step(List.of(new GameCommand.Input(1, Direction.UP),
+                new GameCommand.Input(1, Direction.STOP), new GameCommand.UseItem(1, ItemType.DART)));
+        check(contains(hit, "ITEM_USED:1:DART") && contains(hit, "EXPLODE:2:1:")
+                && game.snapshot().tick() < scheduled, "A clear shot uses the normal explosion in the same tick");
+        check(inventory(game, 1, ItemType.DART) == 0 && game.snapshot().bombs().isEmpty(), "Dart and bomb consumed");
+    }
+
+    private static GameState crateGame(ItemType item, boolean withWall) {
+        String[] rows = mapRows(2, 1, 'B');
+        if (withWall) {
+            rows[1] = rows[1].substring(0, 3) + '#' + rows[1].substring(4);
+        }
+        int guestX = withWall ? 520 : 120;
+        int guestY = withWall ? 440 : 40;
+        GameState game = new GameState(3, GameMap.fromRows(rows),
+                List.of(new ServerPlayer(1, 40, 40), new ServerPlayer(2, guestX, guestY)), 40, fixedDrops(item));
+        game.step(List.of(new GameCommand.PlaceBomb(1)));
+        move(game, 1, Direction.DOWN);
+        game.step(List.of());
+        move(game, 1, Direction.STOP);
+        advanceTo(game, 61);
+        return game;
+    }
+
+    private static GameState collectCrateItem(ItemType item, boolean withWall) {
+        GameState game = crateGame(item, withWall);
+        move(game, 1, Direction.RIGHT);
+        move(game, 1, Direction.UP);
+        game.step(List.of());
+        move(game, 1, Direction.STOP);
+        check(inventory(game, 1, item) == 1, "Fixture collected " + item);
+        return game;
+    }
+
+    private static Random fixedDrops(ItemType... items) {
+        return new Random(0) {
+            private int index;
+
+            @Override
+            public int nextInt(int bound) {
+                return index < items.length ? items[index++].ordinal() : ItemType.values().length;
+            }
+        };
+    }
+
+    private static int inventory(GameState game, int userId, ItemType item) {
+        return game.snapshot().playerItems().get(userId).inventory().getOrDefault(item, 0);
+    }
+
+    private static void move(GameState game, int userId, Direction direction) {
+        game.step(List.of(new GameCommand.Input(userId, direction)));
+    }
+
+    private static void advanceTo(GameState game, long target) {
+        while (game.snapshot().tick() < target) {
+            check(!game.snapshot().finished(), "Game ended before target tick " + target);
+            game.step(List.of());
+        }
     }
 
     private static void trapAndWin() {
@@ -342,6 +505,10 @@ public final class GameLogicTest {
     }
 
     private static GameMap map(int obstacleCol, int obstacleRow, char obstacle) {
+        return GameMap.fromRows(mapRows(obstacleCol, obstacleRow, obstacle));
+    }
+
+    private static String[] mapRows(int obstacleCol, int obstacleRow, char obstacle) {
         String[] rows = new String[Constants.MAP_ROWS];
         for (int row = 0; row < rows.length; row++) {
             char[] cells = new char[Constants.MAP_COLUMNS];
@@ -352,7 +519,7 @@ public final class GameLogicTest {
             }
             rows[row] = new String(cells);
         }
-        return GameMap.fromRows(rows);
+        return rows;
     }
 
     private static GameState.PlayerView player(GameState game, int userId) {

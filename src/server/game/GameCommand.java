@@ -1,9 +1,10 @@
 package server.game;
 
 import common.model.Direction;
+import common.model.ItemType;
 import java.util.Objects;
 
-/** 소켓에서 받은 이동·설치·퇴장 요청을 게임 루프가 처리할 형태로 담는다. */
+/** 한 틱에서 처리할 참가자 요청이다. */
 public sealed interface GameCommand {
     int userId();
 
@@ -14,6 +15,12 @@ public sealed interface GameCommand {
     }
 
     record PlaceBomb(int userId) implements GameCommand { }
+
+    record UseItem(int userId, ItemType item) implements GameCommand {
+        public UseItem {
+            Objects.requireNonNull(item, "item");
+        }
+    }
 
     record Leave(int userId) implements GameCommand { }
 }

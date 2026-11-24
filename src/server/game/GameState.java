@@ -1,7 +1,9 @@
 package server.game;
 
 import common.Constants;
+import common.model.ArenaMap;
 import common.model.Direction;
+import common.model.ItemType;
 import common.model.PlayerState;
 import common.protocol.Message;
 import common.protocol.MsgType;
@@ -13,31 +15,65 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Queue;
 import java.util.Set;
+import java.util.random.RandomGenerator;
 import java.util.stream.Collectors;
 
 /** 방 한 판의 맵, 플레이어, 폭탄 상태를 관리한다. */
 public final class GameState {
+    private static final List<GameMap.Cell> CORNERS = List.of(new GameMap.Cell(1, 1), new GameMap.Cell(13, 1),
+            new GameMap.Cell(1, 11), new GameMap.Cell(13, 11));
+    private static final List<GameMap.Cell> OPPOSITE_CORNERS = List.of(CORNERS.get(0), CORNERS.get(3));
+    private static final int SIGHT_EFFECT_TICKS = 5_000 / Constants.TICK_MILLIS;
+    private static final int DART_RANGE = 5;
+    private static final ItemType[] DROP_TYPES = ItemType.values();
+
     public record PlayerView(int userId, int x, int y, PlayerState state) { }
-    public record Snapshot(long tick, List<PlayerView> players, List<Bomb> bombs, boolean finished) {
+    public record ItemView(Map<ItemType, Integer> inventory, boolean invisible, boolean hasLens) {
+        public ItemView {
+            inventory = Map.copyOf(inventory);
+        }
+    }
+    public record Snapshot(long tick, List<PlayerView> players, List<Bomb> bombs, boolean finished,
+            Map<GameMap.Cell, ItemType> groundItems, Map<Integer, ItemView> playerItems) {
         public Snapshot {
             players = List.copyOf(players);
             bombs = List.copyOf(bombs);
+            groundItems = Map.copyOf(groundItems);
+            playerItems = Map.copyOf(playerItems);
+        }
+
+        public Snapshot(long tick, List<PlayerView> players, List<Bomb> bombs, boolean finished) {
+            this(tick, players, bombs, finished, Map.of(), Map.of());
+        }
+
+        public boolean canSee(int viewerId, int targetId) {
+            ItemView target = playerItems.get(targetId);
+            ItemView viewer = playerItems.get(viewerId);
+            return viewerId == targetId || target == null || !target.invisible() || (viewer != null && viewer.hasLens());
         }
     }
 
     private final int roomId;
     private final GameMap map;
     private final int movementPixelsPerTick;
+    private final RandomGenerator drops;
     private final Map<Integer, ServerPlayer> players = new LinkedHashMap<>();
     private final Map<GameMap.Cell, Bomb> bombs = new LinkedHashMap<>();
     // 설치할 때 폭탄과 겹친 플레이어는 그 칸에서 빠져나갈 수 있다.
     private final Map<GameMap.Cell, Set<Integer>> bombPassers = new HashMap<>();
+    private final Map<GameMap.Cell, ItemType> groundItems = new HashMap<>();
     private long tick;
     private boolean finished;
 
     public GameState(int roomId, GameMap map, List<ServerPlayer> participants, int movementPixelsPerTick) {
+        this(roomId, map, participants, movementPixelsPerTick, RandomGenerator.getDefault());
+    }
+
+    public GameState(int roomId, GameMap map, List<ServerPlayer> participants, int movementPixelsPerTick,
+            RandomGenerator drops) {
         if (roomId <= 0 || participants.size() < Constants.MIN_PLAYERS
                 || participants.size() > Constants.MAX_PLAYERS
                 || movementPixelsPerTick <= 0 || movementPixelsPerTick > Constants.TILE_SIZE) {
@@ -47,6 +83,7 @@ public final class GameState {
         // 방마다 상태를 따로 바꿀 수 있게 맵과 플레이어를 복사한다.
         this.map = map.copy();
         this.movementPixelsPerTick = movementPixelsPerTick;
+        this.drops = Objects.requireNonNull(drops, "drops");
         for (ServerPlayer participant : participants) {
             ServerPlayer player = new ServerPlayer(participant.userId(), participant.x(), participant.y());
             if (!map.canOccupy(player.x, player.y) || players.putIfAbsent(player.userId(), player) != null) {
@@ -61,17 +98,28 @@ public final class GameState {
     }
 
     public static GameState arena(int roomId, List<Integer> userIds, int movementPixelsPerTick) {
+        return arena(roomId, GameMap.arena(), userIds, movementPixelsPerTick, CORNERS);
+    }
+
+    public static GameState arena(int roomId, ArenaMap layout, List<Integer> userIds, int movementPixelsPerTick) {
+        // 둘이 시작할 때는 미리보기와 같이 대각선으로 떨어진 두 자리를 쓴다.
+        List<GameMap.Cell> spawns = userIds.size() == 2 ? OPPOSITE_CORNERS : CORNERS;
+        return arena(roomId, GameMap.fromRows(layout.rows()), userIds, movementPixelsPerTick, spawns);
+    }
+
+    private static GameState arena(int roomId, GameMap map, List<Integer> userIds, int movementPixelsPerTick,
+            List<GameMap.Cell> spawns) {
         // 전달받은 참가자 순서대로 맵 모서리에 시작 위치를 잡는다.
-        int[][] cells = {{1, 1}, {13, 1}, {1, 11}, {13, 11}};
-        if (userIds.size() < Constants.MIN_PLAYERS || userIds.size() > cells.length) {
+        if (userIds.size() < Constants.MIN_PLAYERS || userIds.size() > spawns.size()) {
             throw new IllegalArgumentException("Expected 2 to 4 players");
         }
         List<ServerPlayer> players = new ArrayList<>();
         for (int i = 0; i < userIds.size(); i++) {
-            players.add(new ServerPlayer(userIds.get(i), cells[i][0] * Constants.TILE_SIZE,
-                    cells[i][1] * Constants.TILE_SIZE));
+            GameMap.Cell cell = spawns.get(i);
+            players.add(new ServerPlayer(userIds.get(i), cell.col() * Constants.TILE_SIZE,
+                    cell.row() * Constants.TILE_SIZE));
         }
-        return new GameState(roomId, GameMap.arena(), players, movementPixelsPerTick);
+        return new GameState(roomId, map, players, movementPixelsPerTick);
     }
 
     public boolean hasPlayer(int userId) {
@@ -80,9 +128,14 @@ public final class GameState {
 
     public Snapshot snapshot() {
         // 다음 틱에 위치가 바뀌어도 이미 넘긴 스냅샷에는 반영되지 않는다.
+        Map<Integer, ItemView> playerItems = new LinkedHashMap<>();
+        for (ServerPlayer player : players.values()) {
+            playerItems.put(player.userId(), new ItemView(player.items,
+                    player.state == PlayerState.ALIVE && tick < player.invisibleUntil, tick < player.lensUntil));
+        }
         return new Snapshot(tick, players.values().stream().map(player ->
                 new PlayerView(player.userId(), player.x, player.y, player.state)).toList(),
-                List.copyOf(bombs.values()), finished);
+                List.copyOf(bombs.values()), finished, groundItems, playerItems);
     }
 
     /** 경기 시작 때 전체 맵과 플레이어의 시작 좌표를 보낸다. */
@@ -102,7 +155,7 @@ public final class GameState {
         return message(MsgType.STATE, tick + "|" + positions + "|" + bombList);
     }
 
-    /** 입력, 이동, 설치, 폭발·탈락 순서로 한 틱을 처리한다. */
+    /** 입력, 이동, 아이템 사용, 설치, 폭발·탈락 순서로 한 틱을 처리한다. */
     public List<Message> step(List<GameCommand> commands) {
         if (finished) {
             return List.of();
@@ -110,6 +163,7 @@ public final class GameState {
         tick++;
         List<Message> messages = new ArrayList<>();
         Set<Integer> bombRequests = new LinkedHashSet<>();
+        List<GameCommand.UseItem> itemRequests = new ArrayList<>();
         for (GameCommand command : commands) {
             ServerPlayer player = players.get(command.userId());
             if (player == null) {
@@ -121,10 +175,15 @@ public final class GameState {
                 player.state = PlayerState.DEAD;
                 player.direction = Direction.STOP;
                 messages.add(message(MsgType.PLAYER_LEFT, Integer.toString(player.userId())));
+            } else if (command instanceof GameCommand.UseItem use) {
+                itemRequests.add(use);
             } else if (player.state == PlayerState.ALIVE && player.connected) {
                 if (command instanceof GameCommand.Input input) {
                     // STOP이나 새 방향이 올 때까지 이 방향으로 계속 움직인다.
                     player.direction = input.direction();
+                    if (input.direction() != Direction.STOP) {
+                        player.facing = input.direction();
+                    }
                 } else if (command instanceof GameCommand.PlaceBomb) {
                     bombRequests.add(player.userId());
                 }
@@ -133,11 +192,15 @@ public final class GameState {
         for (ServerPlayer player : players.values()) {
             move(player);
         }
+        for (GameCommand.UseItem request : itemRequests) {
+            useItem(players.get(request.userId()), request.item(), messages);
+        }
         for (int userId : bombRequests) {
             plant(players.get(userId));
         }
         explode(messages);
         resolveTrappedPlayers(messages);
+        collectItems(messages);
         messages.add(stateMessage());
         // 같은 틱에 마지막 두 명이 탈락해도 무승부가 나오도록 여기서 한 번만 판정한다.
         Judge.result(players.values()).ifPresent(result -> {
@@ -181,9 +244,8 @@ public final class GameState {
             return;
         }
         long active = bombs.values().stream().filter(bomb -> bomb.ownerId() == player.userId()).count();
-        int size = Constants.TILE_SIZE;
         // 캐릭터가 여러 칸에 걸쳐 있어도 중심이 있는 칸에 폭탄을 놓는다.
-        GameMap.Cell cell = new GameMap.Cell((player.x + size / 2) / size, (player.y + size / 2) / size);
+        GameMap.Cell cell = centerCell(player);
         if (active >= Constants.DEFAULT_BOMB_LIMIT || bombs.containsKey(cell)
                 || map.tile(cell.col(), cell.row()) != '.') {
             return;
@@ -234,8 +296,8 @@ public final class GameState {
         }
         for (GameMap.Cell cell : hit) {
             if (map.breakBox(cell)) {
-                // 아이템 드롭을 붙이기 전까지는 상자 파괴 때 NONE을 보낸다.
-                messages.add(message(MsgType.EVENT, "BOX_BREAK:" + cell.col() + ":" + cell.row() + ":NONE"));
+                String itemCode = dropItem(cell);
+                messages.add(message(MsgType.EVENT, "BOX_BREAK:" + cell.col() + ":" + cell.row() + ":" + itemCode));
             }
         }
         for (ServerPlayer player : players.values()) {
@@ -247,6 +309,90 @@ public final class GameState {
                 messages.add(message(MsgType.EVENT, "TRAPPED:" + player.userId()));
             }
         }
+    }
+
+    private String dropItem(GameMap.Cell cell) {
+        // 절반은 빈 상자다. 나머지는 네 아이템이 같은 확률로 나온다.
+        int roll = drops.nextInt(DROP_TYPES.length * 2);
+        if (roll >= DROP_TYPES.length) {
+            return "NONE";
+        }
+        ItemType item = DROP_TYPES[roll];
+        groundItems.put(cell, item);
+        return item.name();
+    }
+
+    private void collectItems(List<Message> messages) {
+        if (groundItems.isEmpty()) {
+            return;
+        }
+        // 같은 틱에 두 명이 밟아도 참가자 순서대로 먼저 한 명만 가져간다.
+        for (ServerPlayer player : players.values()) {
+            if (player.state != PlayerState.ALIVE) {
+                continue;
+            }
+            GameMap.Cell cell = centerCell(player);
+            ItemType item = groundItems.remove(cell);
+            if (item != null) {
+                player.items.merge(item, 1, Integer::sum);
+                messages.add(message(MsgType.EVENT,
+                        "ITEM_GET:" + player.userId() + ":" + cell.col() + ":" + cell.row() + ":" + item));
+            }
+        }
+    }
+
+    private void useItem(ServerPlayer player, ItemType item, List<Message> messages) {
+        int count = player.items.getOrDefault(item, 0);
+        PlayerState required = item == ItemType.NEEDLE ? PlayerState.TRAPPED : PlayerState.ALIVE;
+        if (count == 0 || player.state != required) {
+            return;
+        }
+        switch (item) {
+            case INVISIBILITY -> player.invisibleUntil = tick + SIGHT_EFFECT_TICKS;
+            case LENS -> player.lensUntil = tick + SIGHT_EFFECT_TICKS;
+            case NEEDLE -> {
+                player.state = PlayerState.ALIVE;
+                player.trappedUntil = 0;
+            }
+            case DART -> {
+                if (!triggerBombAhead(player)) {
+                    return;
+                }
+            }
+        }
+        if (count == 1) {
+            player.items.remove(item);
+        } else {
+            player.items.put(item, count - 1);
+        }
+        messages.add(message(MsgType.EVENT, "ITEM_USED:" + player.userId() + ":" + item));
+    }
+
+    private boolean triggerBombAhead(ServerPlayer player) {
+        GameMap.Cell origin = centerCell(player);
+        int dx = player.facing == Direction.LEFT ? -1 : player.facing == Direction.RIGHT ? 1 : 0;
+        int dy = player.facing == Direction.UP ? -1 : player.facing == Direction.DOWN ? 1 : 0;
+        for (int distance = 1; distance <= DART_RANGE; distance++) {
+            GameMap.Cell cell = new GameMap.Cell(origin.col() + dx * distance, origin.row() + dy * distance);
+            if (map.tile(cell.col(), cell.row()) != '.') {
+                break;
+            }
+            Bomb bomb = bombs.get(cell);
+            if (bomb != null) {
+                if (bomb.explodeAtTick() <= tick) {
+                    return false;
+                }
+                // 터지는 틱만 앞당기면 폭발과 연쇄 판정은 원래 코드가 처리한다.
+                bombs.put(cell, new Bomb(bomb.ownerId(), bomb.col(), bomb.row(), bomb.range(), tick));
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static GameMap.Cell centerCell(ServerPlayer player) {
+        int size = Constants.TILE_SIZE;
+        return new GameMap.Cell((player.x + size / 2) / size, (player.y + size / 2) / size);
     }
 
     // 방금 폭탄에 맞아 갇힌 플레이어도 이 틱의 접촉 판정에 포함한다.

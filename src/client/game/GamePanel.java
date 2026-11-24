@@ -3,12 +3,14 @@ package client.game;
 import common.Constants;
 import client.resource.Avatar;
 import common.model.Direction;
+import common.model.ItemType;
 import common.model.PlayerState;
 import java.awt.event.ActionEvent;
 import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Consumer;
 import javax.swing.AbstractAction;
 import javax.swing.KeyStroke;
@@ -30,6 +32,8 @@ public final class GamePanel extends JPanel {
     private static final java.awt.image.BufferedImage BALLOON = client.resource.GameImages.load("water-balloon.png");
     private static final java.awt.image.BufferedImage BUBBLE = client.resource.GameImages.load("trapped-bubble.png");
     private List<GameBoard.Balloon> balloons = List.of();
+    private List<ItemMarker> groundItems = List.of();
+    private Set<Integer> hiddenPlayers = Set.of();
     private final List<WaterBlast> blasts = new ArrayList<>();
     private final Map<Integer, PlayerPose> poses = new java.util.HashMap<>();
     // 32ms마다 다시 그려 걸음·물막·폭발의 중간 모습을 표시한다. 위치 갱신은 STATE가 담당하며 숨겨진 패널의 타이머는 멈춘다.
@@ -41,6 +45,7 @@ public final class GamePanel extends JPanel {
     private boolean spaceHeld;
     private MapTiles terrain;
     public record Appearance(String nickname, Avatar avatar) { }
+    public record ItemMarker(int col, int row, ItemType item) { }
     private static final Color NAME_BACKGROUND = new Color(20, 40, 50, 225);
     private static final Font NAME_FONT = new Font(Font.SANS_SERIF, Font.BOLD, 12);
     private Map<Integer, Appearance> appearances = Map.of();
@@ -140,6 +145,12 @@ public final class GamePanel extends JPanel {
         }
     }
 
+    public void updateItems(List<ItemMarker> items, Set<Integer> hiddenPlayers) {
+        groundItems = List.copyOf(items);
+        this.hiddenPlayers = Set.copyOf(hiddenPlayers);
+        repaint();
+    }
+
     /** EXPLODE는 잠깐 그릴 물줄기를 등록하고, BOX_BREAK는 이후에도 바닥으로 표시되도록 게임판의 타일을 바꾼다. */
     public void applyMapEvent(String body) {
         if (board != null) {
@@ -166,6 +177,8 @@ public final class GamePanel extends JPanel {
         poses.clear();
         for (GameBoard.Player player : board.players()) poses.put(player.id(), new PlayerPose(player));
         balloons = List.of();
+        groundItems = List.of();
+        hiddenPlayers = Set.of();
         blasts.clear();
         spaceHeld = false;
         // 상자가 부서져도 같은 테마를 유지하도록 초기 배치에서 한 번만 그림을 고른다.
@@ -198,6 +211,9 @@ public final class GamePanel extends JPanel {
                 g.drawImage(terrain.tile(tile, i % Constants.MAP_COLUMNS, i / Constants.MAP_COLUMNS),
                         x, y, TILE, TILE, null);
             }
+            for (ItemMarker item : groundItems) {
+                drawItem(g, item);
+            }
             // STATE에 들어온 물풍선만 표시한다. 남은 틱으로 크기를 조금 바꿔 터지기 전 박동을 표현한다.
             for (GameBoard.Balloon balloon : balloons) {
                 int inset = (balloon.ticksLeft() / 4 % 2) * 2;
@@ -208,7 +224,7 @@ public final class GamePanel extends JPanel {
             for (WaterBlast blast : blasts) blast.draw(g, TILE, now);
             // 플레이어 좌표는 이미 픽셀 단위이므로 타일 크기를 다시 곱하지 않는다.
             for (GameBoard.Player player : board.players()) {
-                if (player.state() == PlayerState.DEAD) {
+                if (player.state() == PlayerState.DEAD || hiddenPlayers.contains(player.id())) {
                     continue;
                 }
                 Appearance appearance = appearances.get(player.id());
@@ -226,7 +242,7 @@ public final class GamePanel extends JPanel {
             g.setFont(NAME_FONT);
             FontMetrics metrics = g.getFontMetrics();
             for (GameBoard.Player player : board.players()) {
-                if (player.state() == PlayerState.DEAD) continue;
+                if (player.state() == PlayerState.DEAD || hiddenPlayers.contains(player.id())) continue;
                 if (player.id() == myId) {
                     drawMyArrow(g, player.x() + TILE / 2, player.y() - 2);
                     continue;
@@ -245,6 +261,24 @@ public final class GamePanel extends JPanel {
         } finally {
             g.dispose();
         }
+    }
+
+    private void drawItem(Graphics2D g, ItemMarker marker) {
+        String label = switch (marker.item()) {
+            case INVISIBILITY -> "투";
+            case LENS -> "렌";
+            case NEEDLE -> "바";
+            case DART -> "다";
+        };
+        int x = marker.col() * TILE + TILE / 2;
+        int y = marker.row() * TILE + TILE / 2;
+        g.setColor(NAME_BACKGROUND);
+        g.fillRoundRect(x - 12, y - 12, 24, 24, 8, 8);
+        g.setColor(Color.WHITE);
+        g.setFont(NAME_FONT);
+        FontMetrics metrics = g.getFontMetrics();
+        g.drawString(label, x - metrics.stringWidth(label) / 2,
+                y + (metrics.getAscent() - metrics.getDescent()) / 2);
     }
 
     /** paintComponent가 내 캐릭터를 찾았을 때 호출한다. 전달받은 가로 중심과 높이를 기준으로 파란 화살표를 그린다. */

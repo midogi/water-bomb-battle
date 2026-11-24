@@ -2,6 +2,7 @@ package server.game;
 
 import common.Constants;
 import common.model.Direction;
+import common.model.ItemType;
 import common.protocol.Message;
 import common.protocol.MsgType;
 import java.util.ArrayList;
@@ -34,7 +35,7 @@ public final class GameLoop implements AutoCloseable {
     /** 요청을 큐에 넣는다. 플레이어는 메시지 헤더 대신 소켓 세션의 ID로 찾는다. */
     public synchronized boolean submit(int authenticatedUserId, Message message) {
         Objects.requireNonNull(message, "message");
-        if (closed.get() || latest.finished() || !state.hasPlayer(authenticatedUserId)) {
+        if (!acceptsCommands(authenticatedUserId)) {
             return false;
         }
         GameCommand command = switch (message.type()) {
@@ -49,6 +50,19 @@ public final class GameLoop implements AutoCloseable {
             }
             default -> throw new IllegalArgumentException("Not a game command: " + message.type());
         };
+        return enqueue(command);
+    }
+
+    /** 아이템 사용도 다른 입력과 같은 큐에서 처리한다. */
+    public synchronized boolean useItem(int userId, ItemType item) {
+        return acceptsCommands(userId) && enqueue(new GameCommand.UseItem(userId, item));
+    }
+
+    private boolean acceptsCommands(int userId) {
+        return !closed.get() && !latest.finished() && state.hasPlayer(userId);
+    }
+
+    private boolean enqueue(GameCommand command) {
         if (pending.incrementAndGet() > MAX_PENDING_COMMANDS) {
             pending.decrementAndGet();
             return false;
