@@ -18,6 +18,8 @@ public final class ClientHandler implements Runnable{
     private final SessionRegistry registry;
     private UserSession session;
     private final RoomManager rooms;
+    private static final int MAX_CHAT_LENGTH = 100;
+    private static final int EMOJI_COUNT = 8;
 
     public ClientHandler(Socket socket, int userId, SessionRegistry registry, RoomManager rooms){
         this.socket = socket;
@@ -66,8 +68,25 @@ public final class ClientHandler implements Runnable{
                 Room room = currentRoom();
                 room.startGame(userId);
             }
+            case INPUT, BOMB -> currentRoom().submitGameInput(userId, request);
+            case CHAT -> {
+                Room room = currentRoom();
+                String text = request.body().strip();
+                if(text.isEmpty()) {
+                    throw new LobbyException("EMPTY_CHAT", "채팅 내용을 입력하세요");
+                }
+                if(text.length() > MAX_CHAT_LENGTH) {
+                    throw new LobbyException("CHAT_TOO_LONG", "채팅은 " + MAX_CHAT_LENGTH + "자까지 보낼 수 있습니다.");
+                }
+                room.broadcast(new Message(MsgType.CHAT, room.id(), 0, userId + ":" + session.nickname() + "|" + text));
+            }
+                case EMOJI -> {
+                    Room room = currentRoom();
+                    int emoji = parseEmoji(request.body());
+                    room.broadcast(new Message(MsgType.EMOJI, room.id(), 0, userId + ":" + emoji));
+                }
+            }
         }
-    }
 
     private int parseRoomId(String body) throws LobbyException{
         try{
@@ -81,12 +100,7 @@ public final class ClientHandler implements Runnable{
     }
 
     private void leaveRoom(){
-        Room room = rooms.leave(session);
-        if( room == null) {
-            return;
-        }
-        room.broadcast(new Message(MsgType.PLAYER_LEFT, room.id(), 0, Integer.toString(userId)));
-        sendRoomInfo(room);
+       rooms.leave(session);
     }
 
     
@@ -140,5 +154,17 @@ public final class ClientHandler implements Runnable{
             return false;
         }
         throw new LobbyException("INVALID_READY", "준비 값은 true 또는 false 입니다.");
+    }
+
+    private int parseEmoji(String body) throws LobbyException {
+        try{
+            int number = Integer.parseInt(body.strip());
+            if(number >= 0 && number < EMOJI_COUNT) {
+                return number;
+            }
+        } catch (NumberFormatException error) {
+
+        }
+        throw new LobbyException("INVALID_EMOJI", "이모티콘 번호를 확인하세요");
     }
 }

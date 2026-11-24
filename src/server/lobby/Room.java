@@ -2,21 +2,19 @@ package server.lobby;
 
 import common.Constants;
 import common.protocol.Message;
+import common.protocol.MsgType;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.StringJoiner;
 import java.util.ArrayList;
-import java.util.List;
-import common.protocol.MsgType;
 import server.game.GameLoop;
 import server.game.GameState;
-
 import server.net.UserSession;
 
+
 public final class Room{
-    private static final int MOVE_PIXELS_PER_TICK = 4;
     private final int id;
     private final String title;
     private final Map<Integer, UserSession> members = new LinkedHashMap<>();
@@ -24,7 +22,9 @@ public final class Room{
     private int hostId;
     private boolean playing;
     private GameLoop game;
-    
+
+    private static final int MOVE_PIXELS_PER_TICK = 4;
+
     Room(int id, String title, UserSession host){
         this.id = id;
         this.title = title;
@@ -49,15 +49,21 @@ public final class Room{
     }
     //퇴장
     public synchronized void remove(UserSession session) {
-        if( members.remove(session.userId()) == null){ return; }
-        ready.remove(session.userId());
+        int leaverId = session.userId();
+        if(members.remove(leaverId) == null) {return;}
+        ready.remove(leaverId);
         session.setRoomId(Constants.LOBBY_ROOM_ID);
-        
-        //방장이 나가면 방장 교체( 기준은 들어온 순서 )
-        if(session.userId() == hostId && !members.isEmpty()) {
+
+        if(leaverId == hostId && !members.isEmpty()) {
             hostId = members.keySet().iterator().next();
             ready.remove(hostId);
         }
+
+        if(playing && game != null && game.playerLeft(leaverId)){
+            return;
+        }
+        broadcast(new Message(MsgType.PLAYER_LEFT, id, 0, Integer.toString(leaverId)));
+        broadcast(new Message(MsgType.ROOM_INFO, id, 0, infoBody()));
     }
 
     //준비
@@ -121,9 +127,50 @@ public final class Room{
         ready.clear();
     }
 
-    public synchronized List<Integer> startGame(int userId) throws LobbyException{
+    //게임 시작 : 검사 -> GameState/GameLoop 생성 -> GAME_INIT전송
+    public synchronized void startGame(int userId) throws LobbyException{
         checkStart(userId);
+        GameState state = GameState.arena(id, new ArrayList<>(members.keySet()), MOVE_PIXELS_PER_TICK);
+        GameLoop loop = new GameLoop(state, this::onGameMessage);
+        game = loop;
         playing = true;
-       return new ArrayList<>(members.keySet());
+        loop.start();
+    }
+
+    //게임 입력 (INPUT, BOMB)을 게임루프로 전달, userId는 소켓 세션의 ID
+    public synchronized void submitGameInput(int userId, Message request) throws LobbyException{
+        if(!playing || game == null){
+            throw new LobbyException("NOT_PLAYING", "게임 중이 아닙니다.");
+        }
+        try {
+            game.submit(userId, request);
+        } catch (IllegalArgumentException error) {
+            throw new LobbyException("INVALID_INPUT", "입력 값을 확인하세요");
+        }
+    }
+
+    private synchronized void onGameMessage(Message message){
+        broadcast(message);
+            if(message.type() == MsgType.RESULT) {
+                finishGame();
+            }
+    }
+
+    private void finishGame() {
+        if(game != null) {
+            game.close();
+            game = null;
+        }
+        playing = false;
+        ready.clear();
+        broadcast(new Message(MsgType.ROOM_INFO, id, 0, infoBody()));
+    }
+
+    synchronized void close(){
+        if(game != null) {
+            game.close();
+            game = null;
+        }
+         playing = false;
     }
 }
