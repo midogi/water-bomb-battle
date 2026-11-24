@@ -34,11 +34,13 @@ public final class GamePanel extends JPanel {
     private List<GameBoard.Balloon> balloons = List.of();
     private List<ItemMarker> groundItems = List.of();
     private Set<Integer> hiddenPlayers = Set.of();
+    private final List<DartFlight> darts = new ArrayList<>();
     private final List<WaterBlast> blasts = new ArrayList<>();
     private final Map<Integer, PlayerPose> poses = new java.util.HashMap<>();
     // 32ms마다 다시 그려 걸음·물막·폭발의 중간 모습을 표시한다. 위치 갱신은 STATE가 담당하며 숨겨진 패널의 타이머는 멈춘다.
     private final javax.swing.Timer animation = new javax.swing.Timer(32, e -> {
         long now = System.nanoTime();
+        darts.removeIf(dart -> dart.expired(now));
         blasts.removeIf(blast -> blast.expired(now));
         repaint();
     });
@@ -156,9 +158,19 @@ public final class GamePanel extends JPanel {
     /** EXPLODE는 잠깐 그릴 물줄기를 등록하고, BOX_BREAK는 이후에도 바닥으로 표시되도록 게임판의 타일을 바꾼다. */
     public void applyMapEvent(String body) {
         if (board != null) {
+            if (body.startsWith("DART_SHOT:")) {
+                addDartFlight(body);
+                return;
+            }
             if (body.startsWith("EXPLODE:")) {
                 WaterBlast blast = WaterBlast.parse(body);
                 if (blast != null) {
+                    // 이 폭탄에 다트가 날아오는 동안만 물줄기의 첫 프레임을 기다린다.
+                    for (DartFlight dart : darts) {
+                        if (dart.end() == DartFlight.End.BOMB && dart.col() == blast.col() && dart.row() == blast.row() && dart.impact() > blast.started()) {
+                            blast = blast.startAt(dart.impact());
+                        }
+                    }
                     blasts.add(blast);
                     repaint();
 
@@ -173,6 +185,29 @@ public final class GamePanel extends JPanel {
         }
     }
 
+    /** 이미 보이는 캐릭터의 위치에서 서버가 확인한 폭탄까지 그림을 이동시킨다. */
+    private void addDartFlight(String body) {
+        String[] fields = body.split(":", -1);
+        if (fields.length != 6) return;
+        try {
+            int shooter = Integer.parseInt(fields[1]);
+            int col = Integer.parseInt(fields[2]);
+            int row = Integer.parseInt(fields[3]);
+            if (col < 0 || col >= Constants.MAP_COLUMNS || row < 0 || row >= Constants.MAP_ROWS
+                    || hiddenPlayers.contains(shooter)) return;
+            for (GameBoard.Player player : board.players()) {
+                if (player.id() == shooter) {
+                    darts.add(DartFlight.from(player, col, row, DartFlight.End.valueOf(fields[4]),
+                            Direction.valueOf(fields[5]), System.nanoTime()));
+                    repaint();
+                    return;
+                }
+            }
+        } catch (IllegalArgumentException invalid) {
+            // 잘못된 연출 이벤트 하나로 게임 상태 수신을 중단하지 않는다.
+        }
+    }
+
     /** 게임이 시작될 때 초기 맵, 내 번호, 대기실의 닉네임·캐릭터 정보를 받아 첫 화면을 준비한다. */
     public void showBoard(GameBoard board, int myId, Map<Integer, Appearance> roster) {
         this.board = board;
@@ -182,6 +217,7 @@ public final class GamePanel extends JPanel {
         groundItems = List.of();
         hiddenPlayers = Set.of();
         blasts.clear();
+        darts.clear();
         spaceHeld = false;
         // 상자가 부서져도 같은 테마를 유지하도록 초기 배치에서 한 번만 그림을 고른다.
         terrain = MapTiles.forMap(CoastMap.matching(board.tiles()));
@@ -223,6 +259,12 @@ public final class GamePanel extends JPanel {
                         TILE - 2 * inset, TILE - 2 * inset, null);
             }
             long now = System.nanoTime();
+            // STATE가 먼저 폭탄을 지워도 다트가 닿을 때까지 목표 그림은 유지한다.
+            for (DartFlight dart : darts) {
+                if (dart.end() == DartFlight.End.BOMB && now < dart.impact() && balloons.stream().noneMatch(b -> b.col() == dart.col() && b.row() == dart.row())) {
+                    g.drawImage(BALLOON, dart.col() * TILE, dart.row() * TILE, TILE, TILE, null);
+                }
+            }
             for (WaterBlast blast : blasts) blast.draw(g, TILE, now);
             // 플레이어 좌표는 이미 픽셀 단위이므로 타일 크기를 다시 곱하지 않는다.
             for (GameBoard.Player player : board.players()) {
@@ -240,6 +282,7 @@ public final class GamePanel extends JPanel {
                             TILE + 4 + 2 * wave, TILE + 4 - 2 * wave, null);
                 }
             }
+            for (DartFlight dart : darts) dart.draw(g, now);
             // 모든 캐릭터를 먼저 그려서 이웃한 캐릭터가 닉네임을 덮지 않게 한다.
             g.setFont(NAME_FONT);
             FontMetrics metrics = g.getFontMetrics();
@@ -266,21 +309,10 @@ public final class GamePanel extends JPanel {
     }
 
     private void drawItem(Graphics2D g, ItemMarker marker) {
-        String label = switch (marker.item()) {
-            case INVISIBILITY -> "투";
-            case LENS -> "렌";
-            case NEEDLE -> "바";
-            case DART -> "다";
-        };
-        int x = marker.col() * TILE + TILE / 2;
-        int y = marker.row() * TILE + TILE / 2;
-        g.setColor(NAME_BACKGROUND);
-        g.fillRoundRect(x - 12, y - 12, 24, 24, 8, 8);
-        g.setColor(Color.WHITE);
-        g.setFont(NAME_FONT);
-        FontMetrics metrics = g.getFontMetrics();
-        g.drawString(label, x - metrics.stringWidth(label) / 2,
-                y + (metrics.getAscent() - metrics.getDescent()) / 2);
+        // 한 타일 안에 여백을 남겨 밟을 수 있는 바닥 아이템임을 보여 준다.
+        int inset = 4;
+        g.drawImage(ItemArt.forType(marker.item()).image, marker.col() * TILE + inset,
+                marker.row() * TILE + inset, TILE - 2 * inset, TILE - 2 * inset, null);
     }
 
     /** paintComponent가 내 캐릭터를 찾았을 때 호출한다. 전달받은 가로 중심과 높이를 기준으로 파란 화살표를 그린다. */

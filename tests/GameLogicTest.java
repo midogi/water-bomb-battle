@@ -266,10 +266,17 @@ public final class GameLogicTest {
         move(game, 1, Direction.RIGHT);
         game.step(List.of());
         move(game, 1, Direction.UP);
-        game.step(List.of(new GameCommand.Input(1, Direction.LEFT), new GameCommand.Input(1, Direction.STOP),
+        List<Message> blocked = game.step(List.of(new GameCommand.Input(1, Direction.LEFT), new GameCommand.Input(1, Direction.STOP),
                 new GameCommand.UseItem(1, ItemType.DART)));
-        check(inventory(game, 1, ItemType.DART) == 1 && game.snapshot().bombs().size() == 1,
-                "Wall blocks the dart without consuming it");
+        check(inventory(game, 1, ItemType.DART) == 0 && game.snapshot().bombs().size() == 1
+                && contains(blocked, "DART_SHOT:1:3:1:BLOCK:LEFT"), "Wall stops a spent dart");
+        game = collectCrateItem(ItemType.DART, true);
+        game.step(List.of(new GameCommand.PlaceBomb(1)));
+        scheduled = game.snapshot().bombs().get(0).explodeAtTick();
+        move(game, 1, Direction.DOWN);
+        move(game, 1, Direction.RIGHT);
+        game.step(List.of());
+        move(game, 1, Direction.UP);
         move(game, 1, Direction.DOWN);
         move(game, 1, Direction.LEFT);
         game.step(List.of());
@@ -278,6 +285,11 @@ public final class GameLogicTest {
         check(contains(hit, "ITEM_USED:1:DART") && contains(hit, "EXPLODE:2:1:")
                 && game.snapshot().tick() < scheduled, "A clear shot uses the normal explosion in the same tick");
         check(inventory(game, 1, ItemType.DART) == 0 && game.snapshot().bombs().isEmpty(), "Dart and bomb consumed");
+        game = collectCrateItem(ItemType.DART, false);
+        List<Message> miss = game.step(List.of(new GameCommand.Input(1, Direction.RIGHT),
+                new GameCommand.Input(1, Direction.STOP), new GameCommand.UseItem(1, ItemType.DART)));
+        check(contains(miss, "DART_SHOT:1:7:1:MISS:RIGHT") && !contains(miss, "EXPLODE:")
+                && inventory(game, 1, ItemType.DART) == 0, "Empty lane consumes a dart at maximum range");
     }
 
     private static GameState crateGame(ItemType item, boolean withWall) {

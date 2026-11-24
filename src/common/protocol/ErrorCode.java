@@ -2,47 +2,47 @@ package common.protocol;
 
 public enum ErrorCode {
     //로그인
-    NOT_LOGGED_IN("먼저 로그인하세요"),
-    ALREADY_LOGGED_IN("이미 로그인 했습니다."),
-    INVALID_NICK("닉네임은 1~12자이며, | : , 를 사용할 수 없습니다."),
-    DUPLICATE_NICK("이미 사용중인 닉네임입니다."),
+    NOT_LOGGED_IN("Log in first."),
+    ALREADY_LOGGED_IN("Already logged in."),
+    INVALID_NICK("Nickname must be 1 to 12 characters and cannot contain |, : or comma."),
+    DUPLICATE_NICK("Nickname already in use."),
 
     //방
-    INVALID_TITLE("방 제목은 1~20자이며, | : ,를 쓸 수 없습니다."),
-    INVALID_ROOM_ID("방 번호를 확인하세요."),
-    ROOM_NOT_FOUND("존재하지 않는 방입니다."),
-    ROOM_FULL("방이 가득 찼습니다."),
-    ROOM_PLAYING("게임 중에는 할 수 없는 요청입니다."),
-    ALREADY_IN_ROOM("이미 방에 들어가 있습니다."),
-    NOT_IN_ROOM("방에 들어가 있지 않습니다."),
-    INVALID_CHARACTER("캐릭터 코드를 확인하세요."),
-    CHARACTER_TAKEN("다른 참가자가 선택한 캐릭터입니다."),
-    ALREADY_READY("준비를 취소한 뒤 캐릭터를 바꿔 주세요."),
-    CHARACTER_REQUIRED("캐릭터를 먼저 선택해 주세요."),
-    NOT_ALL_SELECTED("모든 참가자가 캐릭터를 선택해야 합니다."),
-    INVALID_MAP("맵 코드를 확인하세요."),
+    INVALID_TITLE("Room title must be 1 to 20 characters and cannot contain |, : or comma."),
+    INVALID_ROOM_ID("Invalid room ID."),
+    ROOM_NOT_FOUND("Room does not exist."),
+    ROOM_FULL("Room is full."),
+    ROOM_PLAYING("Action unavailable during a match."),
+    ALREADY_IN_ROOM("Already in a room."),
+    NOT_IN_ROOM("Not in a room."),
+    INVALID_CHARACTER("Invalid character code."),
+    CHARACTER_TAKEN("Character already selected by another player."),
+    ALREADY_READY("Cancel ready status before changing characters."),
+    CHARACTER_REQUIRED("Select a character first."),
+    NOT_ALL_SELECTED("All players must select a character."),
+    INVALID_MAP("Invalid map code."),
 
     //준비,시작
-    INVALID_READY("준비 값은 true 혹은 false 입니다."),
-    NOT_HOST("방장만 할 수 있는 요청입니다."),
-    ALREADY_PLAYING("이미 게임 중입니다."),
-    NOT_ENOUGH_PLAYERS("최소 인원은 2명입니다."),
-    NOT_ALL_READY("모두 준비되지 않았습니다."),
+    INVALID_READY("Ready must be true or false."),
+    NOT_HOST("Only the host can do that."),
+    ALREADY_PLAYING("Match already in progress."),
+    NOT_ENOUGH_PLAYERS("At least two players are required."),
+    NOT_ALL_READY("Not all players are ready."),
 
     //게임
-    NOT_PLAYING("게임 중이 아닙니다."),
-    INVALID_INPUT("입력 값을 확인하세요"),
-    INVALID_ITEM("아이템 코드를 확인하세요."),
-    GAME_INPUT_BUSY("입력을 처리할 수 없습니다. 잠시 뒤 다시 시도해 주세요."),
+    NOT_PLAYING("No match in progress."),
+    INVALID_INPUT("Invalid input."),
+    INVALID_ITEM("Invalid item code."),
+    GAME_INPUT_BUSY("Input queue busy. Try again."),
 
     //채팅
-    EMPTY_CHAT("채팅 내용을 입력하세요"),
-    CHAT_TOO_LONG("채팅은 100자까지 보낼 수 있습니다."),
-    INVALID_EMOJI("이모티콘 번호를 확인하세요"),
+    EMPTY_CHAT("Chat message is empty."),
+    CHAT_TOO_LONG("Chat messages are limited to 100 characters."),
+    INVALID_EMOJI("Invalid emoji number."),
 
     //공통
-    INVALID_REQUEST("처리할 수 없는 요청입니다."),
-    SERVER_ERROR("서버에서 요청을 처리하지 못 했습니다.");
+    INVALID_REQUEST("Invalid request."),
+    SERVER_ERROR("The server could not process the request.");
 
     private final String message;
 

@@ -56,7 +56,7 @@ record RoomInfo(int roomId, int hostId, List<Member> members, ArenaMap map) {
                         Boolean.parseBoolean(fields[2]), fields.length == 4 ? Avatar.valueOf(fields[3]) : Avatar.NONE));
             }
         }
-        ArenaMap map = parts.length == 3 ? ArenaMap.valueOf(parts[2]) : ArenaMap.TIDE;
+        ArenaMap map = parts.length == 3 ? ArenaMap.fromSelection(parts[2]) : ArenaMap.TIDE;
         return new RoomInfo(roomId, Integer.parseInt(parts[0]), List.copyOf(members), map);
     }
 }

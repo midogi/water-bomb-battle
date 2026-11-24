@@ -27,7 +27,7 @@ public final class Room{
     private final Map<Integer, CharacterType> characters = new LinkedHashMap<>();
     private final Set<Integer> ready = new LinkedHashSet<>();
     private final Map<Integer, ItemState> lastItemStates = new LinkedHashMap<>();
-    private ArenaMap selectedMap = ArenaMap.TIDE;
+    private ArenaMap selectedMap; // null은 경기 시작 때 추첨하는 랜덤 선택이다.
     private int hostId;
     private boolean playing;
     private GameLoop game;
@@ -161,7 +161,7 @@ public final class Room{
             CharacterType character = characters.getOrDefault(member.userId(), CharacterType.NONE);
             list.add(member.userId() + ":" + member.nickname() + ":" + isReady + ":" + character.name());
         }  
-        return hostId + "|" + list + "|" + selectedMap.name();
+        return hostId + "|" + list + "|" + ArenaMap.selectionCode(selectedMap);
     }
 
     public synchronized void broadcastInfo() {
@@ -184,10 +184,18 @@ public final class Room{
     }
 
     //게임 시작 : 검사 -> GameState/GameLoop 생성 -> GAME_INIT전송
-    public synchronized void startGame(int userId) throws LobbyException{
+    public void startGame(int userId) throws LobbyException {
+        startGame(userId, () -> {});
+    }
+
+    public synchronized void startGame(int userId, Runnable afterResult) throws LobbyException{
         checkStart(userId);
-        GameState state = GameState.arena(id, selectedMap, new ArrayList<>(members.keySet()), MOVE_PIXELS_PER_TICK);
-        GameLoop loop = new GameLoop(state, this::onGameMessage);
+        GameState state = GameState.arena(id, ArenaMap.forMatch(selectedMap), new ArrayList<>(members.keySet()), MOVE_PIXELS_PER_TICK);
+        GameLoop loop = new GameLoop(state, message -> {
+            onGameMessage(message);
+            // 현재 방의 잠금을 놓은 뒤 전체 방을 조회해야 다른 방과 서로 기다리지 않는다.
+            if (message.type() == MsgType.RESULT) afterResult.run();
+        });
         game = loop;
         lastItemStates.clear();
         playing = true;

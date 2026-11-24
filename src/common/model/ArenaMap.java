@@ -139,6 +139,22 @@ public enum ArenaMap {
         this.tiles = String.join("", rows);
     }
 
+    /** 대기실의 RANDOM은 아직 실제 배치가 정해지지 않았다는 뜻이다. */
+    public static ArenaMap fromSelection(String code) {
+        return "RANDOM".equals(code) ? null : valueOf(code);
+    }
+
+    public static String selectionCode(ArenaMap map) {
+        return map == null ? "RANDOM" : map.name();
+    }
+
+    /** 한 경기의 GameState를 만들 때 한 번만 뽑아서 모든 참가자에게 같은 배치를 보낸다. */
+    public static ArenaMap forMatch(ArenaMap selection) {
+        if (selection != null) return selection;
+        ArenaMap[] maps = values();
+        return maps[java.util.concurrent.ThreadLocalRandom.current().nextInt(maps.length)];
+    }
+
     public String[] rows() {
         return rows.toArray(String[]::new);
     }

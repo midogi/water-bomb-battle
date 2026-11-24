@@ -10,7 +10,7 @@ import javax.swing.*;
 
 /** 대기실의 작은 맵 버튼과 확대 도감. */
 final class RoomMapPreview extends JButton {
-    private CoastMap selected = CoastMap.TIDE;
+    private CoastMap selected;
     private Consumer<CoastMap> onPick;
 
     RoomMapPreview() {
@@ -23,45 +23,54 @@ final class RoomMapPreview extends JButton {
 
     /** 방장에게는 선택 버튼을, 다른 참가자에게는 도감 버튼을 보여 준다. */
     void setMap(CoastMap map, Consumer<CoastMap> onPick) {
-        if (map != selected || getIcon() == null) setIcon(icon(map, 7, false));
+        if (map != selected || getIcon() == null) setIcon(icon(map, 7));
         selected = map;
         this.onPick = onPick;
-        setText(onPick == null ? "맵 도감" : "맵 선택");
-        setToolTipText(map.title + " · 지형 확대");
+        getAccessibleContext().setAccessibleName(onPick == null ? "맵 도감" : "맵 선택");
+        setToolTipText(map == null ? "랜덤 맵 · 경기 시작 시 추첨" : map.title + " · 지형 확대");
     }
 
-    /** 파괴 후 보기를 선택하면 상자만 바닥으로 그려, 고정 벽 사이에 남는 길을 비교할 수 있다. */
+    /** 처음부터 전체 맵 크기만큼 자리를 확보해 물음표에서 다른 맵으로 바꿔도 버튼이 밀리지 않는다. */
     private void browse() {
-        JComboBox<CoastMap> list = new JComboBox<>(CoastMap.values());
-        list.setSelectedItem(selected);
-        JCheckBox cleared = new JCheckBox("상자를 모두 부순 뒤");
-        JLabel picture = new JLabel();
-        JLabel detail = new JLabel();
-        Runnable refresh = () -> {
-            CoastMap map = (CoastMap) list.getSelectedItem();
-            picture.setIcon(icon(map, 22, cleared.isSelected()));
-            detail.setText(map.description);
-        };
+        CoastMap[] maps = CoastMap.values();
+        JComboBox<String> list = new JComboBox<>();
+        list.addItem("랜덤 맵");
+        for (CoastMap map : maps) list.addItem(map.title);
+        list.setSelectedIndex(selected == null ? 0 : selected.ordinal() + 1);
+
+        int tileSize = previewTileSize();
+        JLabel picture = new JLabel("", SwingConstants.CENTER);
+        picture.setPreferredSize(new Dimension(Constants.MAP_COLUMNS * tileSize, Constants.MAP_ROWS * tileSize));
+        Runnable refresh = () -> picture.setIcon(icon(list.getSelectedIndex() == 0
+                ? null : maps[list.getSelectedIndex() - 1], tileSize));
         list.addActionListener(event -> refresh.run());
-        cleared.addActionListener(event -> refresh.run());
         refresh.run();
-        JPanel contents = new JPanel(new BorderLayout(4, 4));
+
+        JPanel contents = new JPanel(new BorderLayout(0, 6));
         contents.add(list, BorderLayout.NORTH);
         contents.add(picture, BorderLayout.CENTER);
-        JPanel notes = new JPanel(new GridLayout(2, 1));
-        notes.add(detail);
-        notes.add(cleared);
-        contents.add(notes, BorderLayout.SOUTH);
-        if (onPick == null) {
-            JOptionPane.showMessageDialog(this, contents, "맵 도감", JOptionPane.PLAIN_MESSAGE);
-        } else if (JOptionPane.showConfirmDialog(this, contents, "대기실 맵 선택",
-                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) == JOptionPane.OK_OPTION && onPick != null) {
-            onPick.accept((CoastMap) list.getSelectedItem());
+        boolean host = onPick != null;
+        String[] buttons = host ? new String[] {"선택", "취소"} : new String[] {"닫기"};
+        int answer = JOptionPane.showOptionDialog(this, contents, host ? "맵 선택" : "맵 도감",
+                JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE, null, buttons, buttons[0]);
+        if (host && answer == 0 && onPick != null) {
+            onPick.accept(list.getSelectedIndex() == 0 ? null : maps[list.getSelectedIndex() - 1]);
         }
     }
 
-    /** 실제 게임과 같은 타일을 축소해서 표시한다. 도감에서 상자를 숨겨도 원본 배치는 그대로다. */
-    private static ImageIcon icon(CoastMap map, int size, boolean cleared) {
+    /** 현재 모니터의 작업 표시줄과 창 장식, 목록, 버튼에 필요한 여백을 남기고 타일 크기를 정한다. */
+    private int previewTileSize() {
+        GraphicsConfiguration screen = getGraphicsConfiguration();
+        Rectangle bounds = screen.getBounds();
+        Insets insets = Toolkit.getDefaultToolkit().getScreenInsets(screen);
+        int width = bounds.width - insets.left - insets.right - 100;
+        int height = bounds.height - insets.top - insets.bottom - 180;
+        return Math.max(1, Math.min(22, Math.min(width / Constants.MAP_COLUMNS, height / Constants.MAP_ROWS)));
+    }
+
+    /** 대기실과 도감 모두 경기 시작 시 보이는 원래 배치를 사용한다. */
+    private static Icon icon(CoastMap map, int size) {
+        if (map == null) return WaitingRoomPanel.unknownIcon(size * 8);
         BufferedImage result = new BufferedImage(Constants.MAP_COLUMNS * size, Constants.MAP_ROWS * size,
                 BufferedImage.TYPE_INT_RGB);
         MapTiles art = MapTiles.forMap(map);
@@ -72,7 +81,7 @@ final class RoomMapPreview extends JButton {
             for (int y = 0; y < rows.length; y++) {
                 for (int x = 0; x < rows[y].length(); x++) {
                     char tile = rows[y].charAt(x);
-                    g.drawImage(art.tile(cleared && tile == 'B' ? '.' : tile, x, y),
+                    g.drawImage(art.tile(tile, x, y),
                             x * size, y * size, size, size, null);
                 }
             }

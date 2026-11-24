@@ -1,6 +1,7 @@
 package client.ui;
 
 import client.game.CoastMap;
+import common.protocol.ErrorCode;
 import client.game.GameBoard;
 import client.game.GamePanel;
 import client.game.MatchScreen;
@@ -28,7 +29,7 @@ public final class WaitingRoomPreview {
     private final Map<Integer, RoomInfo.Member> members = new LinkedHashMap<>();
     private final Map<Integer, View> views = new LinkedHashMap<>();
     private int hostId = 2;
-    private CoastMap selectedMap = CoastMap.TIDE;
+    private CoastMap selectedMap;
     private GameLoop loop;
     private Timer timer;
 
@@ -65,7 +66,7 @@ public final class WaitingRoomPreview {
 
     /** 현재 방장과 참가자 목록을 한 시점의 방 정보로 묶는다. publish()와 선택·시작 조건 검사에서 사용한다. */
     private RoomInfo snapshot() {
-        return new RoomInfo(ROOM_ID, hostId, List.copyOf(members.values()), selectedMap.layout());
+        return new RoomInfo(ROOM_ID, hostId, List.copyOf(members.values()), selectedMap == null ? null : selectedMap.layout());
     }
 
     /** 참가자의 상태가 바뀌면 같은 방 정보를 모든 창의 showRoom()에 보내되 각 창에는 그 사람의 번호를 넘긴다. */
@@ -97,9 +98,9 @@ public final class WaitingRoomPreview {
         RoomInfo.Member me = members.get(id);
         RoomInfo.Member owner = snapshot().owner(avatar);
         if (loop != null || (me.id() != hostId && me.ready())) {
-            reject(id, "준비를 취소한 뒤 선택해 주세요.");
+            reject(id, ErrorCode.ALREADY_READY.body());
         } else if (owner != null && owner.id() != id) {
-            reject(id, "다른 참가자가 먼저 선택했습니다.");
+            reject(id, ErrorCode.CHARACTER_TAKEN.body());
         } else {
             // 새로운 선택을 확인한 뒤에만 기존 선택을 교체한다. NONE은 누구나 선택 가능하다.
             members.put(id, new RoomInfo.Member(id, me.nickname(), false, avatar));
@@ -111,7 +112,7 @@ public final class WaitingRoomPreview {
     private void setReady(int id, boolean ready) {
         RoomInfo.Member me = members.get(id);
         if (loop != null || (ready && me.avatar() == Avatar.NONE)) {
-            reject(id, "캐릭터를 먼저 선택해 주세요.");
+            reject(id, ErrorCode.CHARACTER_REQUIRED.body());
             return;
         }
         members.put(id, new RoomInfo.Member(id, me.nickname(), ready, me.avatar()));
@@ -146,11 +147,11 @@ public final class WaitingRoomPreview {
     private void start(int id) {
         RoomInfo room = snapshot();
         if (id != hostId || loop != null || !room.canStart()) {
-            reject(id, "모두 캐릭터를 선택하고 준비한 뒤 방장이 시작할 수 있습니다.");
+            reject(id, "Only the host can start once all players have selected characters and all guests are ready.");
             return;
         }
         List<Integer> participantIds = room.members().stream().map(RoomInfo.Member::id).toList();
-        GameState state = GameState.arena(ROOM_ID, selectedMap.layout(), participantIds, 4);
+        GameState state = GameState.arena(ROOM_ID, common.model.ArenaMap.forMatch(room.map()), participantIds, 4);
         loop = new GameLoop(state, message -> { });
         GameLoop round = loop;
         GameBoard board = GameBoard.parse(state.initialMessage().body());
@@ -174,6 +175,9 @@ public final class WaitingRoomPreview {
                     updateItems(round.snapshot());
                 } else if (message.type() == MsgType.EVENT) {
                     views.values().forEach(view -> view.game.applyMapEvent(message.body()));
+                } else if (message.type() == MsgType.PLAYER_LEFT) {
+                    int leaver = Integer.parseInt(message.body());
+                    views.values().forEach(view -> view.match.playerLeft(leaver));
                 } else if (message.type() == MsgType.RESULT) {
                     views.values().forEach(view -> view.match.finish(message.body()));
                     timer.stop();
@@ -214,6 +218,7 @@ public final class WaitingRoomPreview {
     /** 서버 없이 대기실을 확인하는 시작점이다. 물방울과 파랑의 두 창을 열어 선택·준비 결과를 비교할 수 있게 한다. */
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
+            javax.swing.JComponent.setDefaultLocale(java.util.Locale.KOREAN);
             WaitingRoomPreview preview = new WaitingRoomPreview();
             preview.join(1, "물방울");
             preview.join(2, "파랑");

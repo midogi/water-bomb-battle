@@ -31,7 +31,9 @@ public class MainFrame extends JFrame implements LoginPanel.LoginListener,
     private final JPanel screens = new JPanel(layout);
 
     private final LoginPanel loginPanel = new LoginPanel(this);
-    private final LobbyPanel lobbyPanel = new LobbyPanel(this);
+    private final LobbyPanel lobbyPanel = new LobbyPanel(this,
+            text -> sendChat(common.Constants.LOBBY_ROOM_ID, text),
+            emoji -> sendEmoji(common.Constants.LOBBY_ROOM_ID, emoji));
     // 패널은 버튼 입력을 알리고, 이 창은 현재 세션에 맞는 요청을 보낸다.
     private final WaitingRoomPanel waitingRoom = new WaitingRoomPanel(this::readyRequested,
             this::startRequested, this::selectRequested, this::sendChat, this::sendEmoji, this::leaveRequested);
@@ -108,11 +110,18 @@ public class MainFrame extends JFrame implements LoginPanel.LoginListener,
         layout.show(screens, LOBBY);
     }
 
+    /** 다른 사용자의 활동으로 받은 목록은 표시만 갱신한다. 퇴장 응답과 화면 전환은 별도로 처리한다. */
+    @Override
+    public void lobbyUpdated(List<String> nicknames, List<RoomSummary> rooms) {
+        lobbyPanel.setOnlineUsers(nicknames);
+        lobbyPanel.setRooms(rooms);
+    }
+
     /** LobbySession이 방 목록을 해석하면 호출한다. 목록을 보여 주는 작업은 LobbyPanel에 맡긴다. */
     @Override
     public void roomsReceived(List<RoomSummary> rooms) {
         lobbyPanel.setRooms(rooms);
-        // 현재 서버는 로그인 직후와 퇴장 처리 직후에 요청자에게 ROOM_LIST를 보낸다.
+        // 현재 서버는 목록 조회 또는 퇴장 처리 직후에 요청자에게 ROOM_LIST를 보낸다.
         // 방 나가기를 요청한 상태에서 목록이 도착하면 퇴장이 끝난 것으로 보고, 로그인 연결을 유지한 채 로비로 돌아간다.
         if (waitingRoom.isLeavePending()) {
             currentRoom = null;
@@ -150,6 +159,8 @@ public class MainFrame extends JFrame implements LoginPanel.LoginListener,
     /** 요청이 거절되면 로비와 대기실의 요청 잠금을 해제하고 이유를 보여 준다. 사용자는 같은 연결에서 다시 시도할 수 있다. */
     @Override
     public void requestRejected(String reason) {
+        // 결과보다 늦게 도착한 마지막 경기 입력의 응답은 이미 결과 화면으로 안내한 상태다.
+        if (match.isFinished() && reason.startsWith("NOT_PLAYING:")) return;
         // 방 요청이 거절되어도 로그인 연결은 유지한다.
         lobbyPanel.setRequestPending(false);
         waitingRoom.requestFinished();
@@ -164,8 +175,8 @@ public class MainFrame extends JFrame implements LoginPanel.LoginListener,
         if (gameRoomId != 0 && gameRoomId != room.roomId()) return;
         currentRoom = room;
         waitingRoom.showRoom(room, myId, roomTitle);
-        waitingRoom.showMap(CoastMap.valueOf(room.map().name()), myId == room.hostId()
-                && room.member(myId) != null ? map -> session.selectMap(room.roomId(), map.layout()) : null);
+        waitingRoom.showMap(room.map() == null ? null : CoastMap.valueOf(room.map().name()), myId == room.hostId()
+                && room.member(myId) != null ? map -> session.selectMap(room.roomId(), map == null ? null : map.layout()) : null);
         if (gameRoomId != 0) return;
         layout.show(screens, WAITING_ROOM);
     }
@@ -187,7 +198,13 @@ public class MainFrame extends JFrame implements LoginPanel.LoginListener,
 
     /** EMOJI에는 닉네임이 없어 발신자 번호로 현재 방의 명단을 조회한다. 모르는 그림 번호도 텍스트로 남긴다. */
     @Override
-    public void emojiReceived(int roomId, int senderId, int number) {
+    public void emojiReceived(int roomId, int senderId, int number, String lobbyNickname) {
+        if (roomId == common.Constants.LOBBY_ROOM_ID && currentRoom == null) {
+            RoomEmoji emoji = RoomEmoji.find(number);
+            if (emoji == null) lobbyPanel.chat.appendChat(lobbyNickname + " · [이모티콘 " + number + "]");
+            else lobbyPanel.chat.appendEmoji(lobbyNickname, emoji);
+            return;
+        }
         if (currentRoom == null || currentRoom.roomId() != roomId || gameRoomId != 0) return;
         RoomInfo.Member sender = currentRoom.member(senderId);
         String name = sender == null ? "참가자 " + senderId : sender.nickname();
@@ -202,6 +219,7 @@ public class MainFrame extends JFrame implements LoginPanel.LoginListener,
     /** 수신한 대화의 방 번호를 확인해 현재 대기실에 해당하는 메시지만 채팅 기록에 붙인다. */
     @Override
     public void chatReceived(int roomId, String line) {
+        if (roomId == common.Constants.LOBBY_ROOM_ID && currentRoom == null) lobbyPanel.chat.appendChat(line);
         if (currentRoom != null && currentRoom.roomId() == roomId && gameRoomId == 0) {
             waitingRoom.appendChat(line);
         }
@@ -247,18 +265,22 @@ public class MainFrame extends JFrame implements LoginPanel.LoginListener,
 
     /** GamePanel에서 현재 방향이 달라지면 호출한다. 게임 중이고 세션이 있을 때만 이동 요청을 보낸다. */
     private void moveRequested(Direction direction) {
-        if (session != null && gameRoomId != 0) {
+        if (canSendGameInput()) {
             session.move(gameRoomId, direction);
         }
     }
 
     /** 현재 플레이 중인 방으로만 물풍선 설치 요청을 보낸다. */
     private void bombRequested() {
-        if (session != null && gameRoomId != 0) session.placeBomb(gameRoomId);
+        if (canSendGameInput()) session.placeBomb(gameRoomId);
     }
 
     private void itemRequested(ItemType item) {
-        if (session != null && gameRoomId != 0) session.useItem(gameRoomId, item);
+        if (canSendGameInput()) session.useItem(gameRoomId, item);
+    }
+
+    private boolean canSendGameInput() {
+        return session != null && gameRoomId != 0 && !match.isFinished();
     }
 
     @Override
@@ -274,6 +296,11 @@ public class MainFrame extends JFrame implements LoginPanel.LoginListener,
     @Override
     public void mapEvent(int roomId, String body) {
         if (gameRoomId != 0 && roomId == gameRoomId) gamePanel.applyMapEvent(body);
+    }
+
+    @Override
+    public void playerLeft(int roomId, int playerId) {
+        if (gameRoomId != 0 && roomId == gameRoomId) match.playerLeft(playerId);
     }
 
     /** 현재 경기의 STATE만 MatchScreen에 넘긴다. 같은 응답에서 참가자 카드 상태와 게임판의 좌표·물풍선을 함께 갱신한다. */
@@ -293,6 +320,11 @@ public class MainFrame extends JFrame implements LoginPanel.LoginListener,
 
     /** 실제 클라이언트의 시작점이다. Swing 이벤트 스레드에서 창을 만들고 로그인 화면을 띄운다. */
     public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> new MainFrame().setVisible(true));
+        SwingUtilities.invokeLater(() -> {
+            javax.swing.JComponent.setDefaultLocale(java.util.Locale.KOREAN);
+            javax.swing.UIManager.put("OptionPane.okButtonText", "확인");
+            javax.swing.UIManager.put("OptionPane.cancelButtonText", "취소");
+            new MainFrame().setVisible(true);
+        });
     }
 }

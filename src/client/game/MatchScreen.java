@@ -18,8 +18,12 @@ public final class MatchScreen extends JPanel {
     private final JLabel result = new JLabel("", SwingConstants.CENTER);
     private final JPanel members = new JPanel();
     private final Map<Integer, JLabel> statuses = new LinkedHashMap<>();
-    private final Map<ItemType, JButton> itemButtons = new EnumMap<>(ItemType.class);
+    private final java.util.Set<Integer> departed = new java.util.HashSet<>();
+    // 아이템 목록과 하단 나가기 버튼 사이의 간격. 키우면 목록만 위로 올라간다.
+    private static final int ITEM_EXIT_GAP = 32;
+    private final Map<ItemType, JLabel> itemSlots = new EnumMap<>(ItemType.class);
     private final JButton leave = new JButton("나가기");
+    private boolean dartAvailable;
     private boolean finished;
     private int myId;
 
@@ -53,19 +57,25 @@ public final class MatchScreen extends JPanel {
         members.setLayout(new BoxLayout(members, BoxLayout.Y_AXIS));
         members.setOpaque(false);
         side.add(members, BorderLayout.CENTER);
-        JPanel actions = new JPanel(new GridLayout(0, 1, 0, 3));
-        actions.setOpaque(false);
+        JPanel bottom = new JPanel(new BorderLayout());
+        bottom.setOpaque(false);
         if (onItem != null) {
-            for (ItemType item : ItemType.values()) {
-                JButton button = new JButton();
-                button.setFocusable(false);
-                button.addActionListener(e -> onItem.accept(item));
-                itemButtons.put(item, button);
-                actions.add(button);
+            JPanel inventory = new JPanel(new GridLayout(0, 1, 0, 3));
+            inventory.setOpaque(false);
+            inventory.setBorder(BorderFactory.createEmptyBorder(0, 0, ITEM_EXIT_GAP, 0));
+            for (ItemArt art : ItemArt.values()) {
+                JLabel slot = new JLabel("", art.slotIcon, SwingConstants.LEADING);
+                slot.setOpaque(true);
+                slot.setBackground(new Color(242, 249, 245));
+                slot.setBorder(BorderFactory.createEmptyBorder(1, 4, 1, 2));
+                itemSlots.put(art.type, slot);
+                inventory.add(slot);
+                bindItemKey(art, onItem);
             }
+            bottom.add(inventory, BorderLayout.CENTER);
         }
-        actions.add(leave);
-        side.add(actions, BorderLayout.SOUTH);
+        bottom.add(leave, BorderLayout.SOUTH);
+        side.add(bottom, BorderLayout.SOUTH);
         add(side, BorderLayout.EAST);
         leave.addActionListener(e -> {
             leave.setEnabled(false);
@@ -82,6 +92,7 @@ public final class MatchScreen extends JPanel {
         leave.setEnabled(true);
         board.setEnabled(true);
         statuses.clear();
+        departed.clear();
         members.removeAll();
         for (GameBoard.Player player : initial.players()) {
             GamePanel.Appearance look = appearances.get(player.id());
@@ -111,23 +122,57 @@ public final class MatchScreen extends JPanel {
     }
 
     public void updateInventory(Map<ItemType, Integer> inventory, boolean invisible, boolean lensActive) {
-        for (var entry : itemButtons.entrySet()) {
-            int count = inventory.getOrDefault(entry.getKey(), 0);
-            String name = switch (entry.getKey()) {
-                case INVISIBILITY -> "투명화";
-                case LENS -> "렌즈";
-                case NEEDLE -> "바늘";
-                case DART -> "다트";
-            };
-            JButton button = entry.getValue();
-            boolean active = switch (entry.getKey()) {
-                case INVISIBILITY -> invisible;
-                case LENS -> lensActive;
-                default -> false;
-            };
-            button.setText(name + " " + count + (active ? " · 적용 중" : ""));
-            button.setEnabled(!finished && count > 0);
+        for (var entry : itemSlots.entrySet()) {
+            ItemArt art = ItemArt.forType(entry.getKey());
+            int count = inventory.getOrDefault(art.type, 0);
+            boolean active = (art.type == ItemType.INVISIBILITY && invisible)
+                    || (art.type == ItemType.LENS && lensActive);
+            JLabel slot = entry.getValue();
+            slot.setText(art.key + "  " + art.name + " ×" + count + (active ? " · 사용 중" : ""));
+            slot.setEnabled(!finished && (count > 0 || active));
+            if (art.type == ItemType.DART) dartAvailable = count > 0;
+            else getActionMap().get(art.type).setEnabled(!finished && count > 0);
         }
+    }
+
+    /** 숫자를 뗄 때 한 번만 요청해 키를 길게 눌러도 여러 개가 연달아 소모되지 않게 한다. */
+    private void bindItemKey(ItemArt art, Consumer<ItemType> onItem) {
+        InputMap keys = getInputMap(WHEN_IN_FOCUSED_WINDOW);
+        if (art.type == ItemType.DART) {
+            bindDartPress(keys, onItem);
+            return;
+        }
+        keys.put(KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_0 + art.key, 0, true), art.type);
+        keys.put(KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_NUMPAD0 + art.key, 0, true), art.type);
+        getActionMap().put(art.type, new AbstractAction() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent event) {
+                if (board.isEnabled() && !finished) onItem.accept(art.type);
+            }
+        });
+    }
+
+    /** 다트는 키를 누르는 순간 발사하고, 손을 떼기 전까지 자동 반복 입력을 무시한다. */
+    private void bindDartPress(InputMap keys, Consumer<ItemType> onItem) {
+        java.util.Set<Integer> held = new java.util.HashSet<>();
+        for (int key : new int[]{java.awt.event.KeyEvent.VK_4, java.awt.event.KeyEvent.VK_NUMPAD4}) {
+            String press = "dart-press-" + key;
+            String release = "dart-release-" + key;
+            keys.put(KeyStroke.getKeyStroke(key, 0, false), press);
+            keys.put(KeyStroke.getKeyStroke(key, 0, true), release);
+            getActionMap().put(press, new AbstractAction() {
+                public void actionPerformed(java.awt.event.ActionEvent e) {
+                    if (held.add(key) && board.isEnabled() && !finished && dartAvailable)
+                        onItem.accept(ItemType.DART);
+                }
+            });
+            getActionMap().put(release, new AbstractAction() {
+                public void actionPerformed(java.awt.event.ActionEvent e) { held.remove(key); }
+            });
+        }
+        board.addFocusListener(new java.awt.event.FocusAdapter() {
+            public void focusLost(java.awt.event.FocusEvent e) { held.clear(); }
+        });
     }
 
     private static String stateName(PlayerState state) {
@@ -138,12 +183,20 @@ public final class MatchScreen extends JPanel {
         };
     }
 
+    /** 퇴장 직후 서버가 같은 사람을 DEAD로 보내도 카드에는 퇴장 사유를 유지한다. */
+    public void playerLeft(int playerId) {
+        JLabel label = statuses.get(playerId);
+        if (finished || label == null) return;
+        departed.add(playerId);
+        label.setText("퇴장");
+    }
+
     /** 서버가 확정한 참가자 상태를 명단과 게임판에 함께 반영한다. 종료 후에는 최종 결과를 유지한다. */
     public void updateState(GameBoard.State state) {
         if (finished) return;
         for (GameBoard.Player player : state.players()) {
             JLabel label = statuses.get(player.id());
-            if (label != null) label.setText(stateName(player.state()));
+            if (label != null && !departed.contains(player.id())) label.setText(stateName(player.state()));
         }
         board.updateState(state);
     }
@@ -158,13 +211,21 @@ public final class MatchScreen extends JPanel {
         boolean won = winner.equals(Integer.toString(myId));
         finished = true;
         board.setEnabled(false);
-        itemButtons.values().forEach(button -> button.setEnabled(false));
+        itemSlots.forEach((type, slot) -> {
+            slot.setEnabled(false);
+            if (type != ItemType.DART) getActionMap().get(type).setEnabled(false);
+        });
         result.setIcon(draw ? null : won ? WIN : LOSE);
         result.setText(draw ? "무승부" : "");
         result.getAccessibleContext().setAccessibleName(draw ? "무승부" : won ? "승리" : "패배");
         result.setVisible(true);
         leave.setEnabled(true);
         leave.requestFocusInWindow();
+    }
+
+    /** 결과가 확정된 뒤에는 포커스 이동으로 생긴 STOP도 전송하지 않는다. 다음 경기 시작 시 초기화된다. */
+    public boolean isFinished() {
+        return finished;
     }
 
     /** 실제 통신에는 경기만 포기하는 요청이 없으므로 결과 수신 후 대기실 복귀를 허용한다. */
