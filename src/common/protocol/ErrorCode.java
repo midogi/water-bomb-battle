@@ -2,7 +2,7 @@ package common.protocol;
 
 public enum ErrorCode {
     //로그인
-    NOT_LOGGED_IND("먼저 로그인하세요"),
+    NOT_LOGGED_IN("먼저 로그인하세요"),
     ALREADY_LOGGED_IN("이미 로그인 했습니다."),
     INVALID_NICK("닉네임은 1~12자이며, | : , 를 사용할 수 없습니다."),
     DUPLICATE_NICK("이미 사용중인 닉네임입니다."),

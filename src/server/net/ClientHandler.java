@@ -9,7 +9,7 @@ import java.net.Socket;
 import server.lobby.LobbyException;
 import server.lobby.Room;
 import server.lobby.RoomManager;
-
+import common.protocol.ErrorCode;
 
 
 public final class ClientHandler implements Runnable{
@@ -20,6 +20,7 @@ public final class ClientHandler implements Runnable{
     private final RoomManager rooms;
     private static final int MAX_CHAT_LENGTH = 100;
     private static final int EMOJI_COUNT = 8;
+    private static final int MAX_NICK_LENGTH = 12;
 
     public ClientHandler(Socket socket, int userId, SessionRegistry registry, RoomManager rooms){
         this.socket = socket;
@@ -58,7 +59,6 @@ public final class ClientHandler implements Runnable{
                 leaveRoom();
                 reply(MsgType.ROOM_LIST, rooms.listBody());
             }
-            default -> reply(MsgType.ERROR, "NOT_IMPLEMENTED:아직 구현하지 않은 요청입니다.");
             case READY-> {
                 Room room = currentRoom();
                 room.setReady(userId, parseReady(request.body()));
@@ -73,10 +73,10 @@ public final class ClientHandler implements Runnable{
                 Room room = currentRoom();
                 String text = request.body().strip();
                 if(text.isEmpty()) {
-                    throw new LobbyException("EMPTY_CHAT", "채팅 내용을 입력하세요");
+                    throw new LobbyException(ErrorCode.EMPTY_CHAT);
                 }
                 if(text.length() > MAX_CHAT_LENGTH) {
-                    throw new LobbyException("CHAT_TOO_LONG", "채팅은 " + MAX_CHAT_LENGTH + "자까지 보낼 수 있습니다.");
+                    throw new LobbyException(ErrorCode.CHAT_TOO_LONG);
                 }
                 room.broadcast(new Message(MsgType.CHAT, room.id(), 0, userId + ":" + session.nickname() + "|" + text));
             }
@@ -85,6 +85,7 @@ public final class ClientHandler implements Runnable{
                     int emoji = parseEmoji(request.body());
                     room.broadcast(new Message(MsgType.EMOJI, room.id(), 0, userId + ":" + emoji));
                 }
+                default -> throw new LobbyException(ErrorCode.INVALID_REQUEST);
             }
         }
 
@@ -92,7 +93,7 @@ public final class ClientHandler implements Runnable{
         try{
             return Integer.parseInt(body.strip());
         } catch (NumberFormatException error) {
-            throw new LobbyException("INVALID_ROOM_ID", "방 번호를 확인하세요.");
+            throw new LobbyException(ErrorCode.INVALID_ROOM_ID);
         }
     }
     private void sendRoomInfo(Room room){
@@ -108,28 +109,31 @@ public final class ClientHandler implements Runnable{
     private void handle(Message request){
         if(request.type() == MsgType.LOGIN) {
             if(session.isLoggedIn()) {
-                reply(MsgType.ERROR, "ALREADY_LOGGED_IN:이미 로그인 했습니다.");
+                replyError(ErrorCode.ALREADY_LOGGED_IN);
                 return;
             }
             String candidate = request.body().strip();
-            if(candidate.isEmpty() || candidate.indexOf('|') >= 0
-                || candidate.indexOf(':') >= 0|| candidate.indexOf(',') >= 0) {
-                reply(MsgType.ERROR, "INVALID_NICK:닉네임과 구분자를 확인하세요.");
-                return;
-            }
+            if(candidate.isEmpty() || candidate.length() > MAX_NICK_LENGTH ||
+        candidate.indexOf('|') >= 0 || candidate.indexOf(':')>=0 || candidate.indexOf(',')>=0) {
+            replyError(ErrorCode.INVALID_NICK);
+            return;
+        }
             if(!registry.register(candidate, session)) {
-                reply(MsgType.ERROR, "DUPLICATE_NICK:이미 사용 중인 닉네임입니다.");
+                replyError(ErrorCode.DUPLICATE_NICK);
                 return;
             }
             reply(MsgType.LOGIN_OK, Integer.toString(userId));
         } else if( !session.isLoggedIn()) {
-            reply(MsgType.ERROR, "NOT_LOGGED_IN:먼저 로그인하세요");
+            replyError(ErrorCode.NOT_LOGGED_IN);
         } else {
             try {
                 handleLobby(request);
             } catch (LobbyException error) {
-                reply(MsgType.ERROR, error.code() + ":" + error.getMessage());
-            }
+                replyError(error.code());
+            } catch (RuntimeException error) {
+                System.err.println("Client" + userId + "request failed: " + request.type() + " " + error);
+                replyError(ErrorCode.SERVER_ERROR);
+            }   
         }
     }
 
@@ -140,7 +144,7 @@ public final class ClientHandler implements Runnable{
     private Room currentRoom() throws LobbyException {
         Room room = rooms.find(session.roomId());
         if(room == null) {
-            throw new LobbyException("NOT_IN_ROOM", "방에 들어가 있지 않습니다.");
+            throw new LobbyException(ErrorCode.NOT_IN_ROOM);
         }
         return room;
     }
@@ -153,7 +157,7 @@ public final class ClientHandler implements Runnable{
         if(value.equals("false")){
             return false;
         }
-        throw new LobbyException("INVALID_READY", "준비 값은 true 또는 false 입니다.");
+        throw new LobbyException(ErrorCode.INVALID_READY);
     }
 
     private int parseEmoji(String body) throws LobbyException {
@@ -165,6 +169,10 @@ public final class ClientHandler implements Runnable{
         } catch (NumberFormatException error) {
 
         }
-        throw new LobbyException("INVALID_EMOJI", "이모티콘 번호를 확인하세요");
+        throw new LobbyException(ErrorCode.INVALID_EMOJI);
+    }
+
+    private void replyError(ErrorCode code) {
+        reply(MsgType.ERROR,code.body());
     }
 }

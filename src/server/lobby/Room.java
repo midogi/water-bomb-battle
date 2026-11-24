@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import server.game.GameLoop;
 import server.game.GameState;
 import server.net.UserSession;
+import common.protocol.ErrorCode;
 
 
 public final class Room{
@@ -39,10 +40,10 @@ public final class Room{
     //입장
     public synchronized void add(UserSession session) throws LobbyException{
         if ( playing ) {
-            throw new LobbyException("ROOM_PLAYING", "게임 중인 방입니다.");
+            throw new LobbyException(ErrorCode.ROOM_PLAYING);
         }
         if (members.size() >= Constants.MAX_PLAYERS) {
-            throw new LobbyException("ROOM_FULL", "방이 가득 찼습니다.");
+            throw new LobbyException(ErrorCode.ROOM_FULL);
         }
         members.put(session.userId(), session);
         session.setRoomId(id);
@@ -69,7 +70,7 @@ public final class Room{
     //준비
     public synchronized void setReady(int userId, boolean value) throws LobbyException{
         if(playing) {
-            throw new LobbyException("ROOM_PLAYING", "게임 중에는 준비 상태를 바꿀 수 없습니다.");
+            throw new LobbyException(ErrorCode.ROOM_PLAYING);
         }
         if(!members.containsKey(userId)) {
             return;
@@ -84,17 +85,17 @@ public final class Room{
     //시작
     public synchronized void checkStart(int userId) throws LobbyException {
         if (userId != hostId) {
-            throw new LobbyException("NOT_HOST", "방장만 시작할 수 있습니다.");
+            throw new LobbyException(ErrorCode.NOT_HOST);
         }
         if(playing){
-            throw new LobbyException("ALREADY_PLAYING", "이미 게임 중 입니다.");
+            throw new LobbyException(ErrorCode.ALREADY_PLAYING);
         }
         if(members.size() < Constants.MIN_PLAYERS) {
-            throw new LobbyException("NOT_ENOUGH_PLAYERS", "최소 인원은 2명입니다.");
+            throw new LobbyException(ErrorCode.NOT_ENOUGH_PLAYERS);
         }
         for( int memberId : members.keySet()) {
             if(memberId != hostId && !ready.contains(memberId)) {
-                throw new LobbyException("NOT_ALL_READY","모두 준비되지 않았습니다.");
+                throw new LobbyException(ErrorCode.NOT_ALL_READY);
             }
         }
     }
@@ -140,12 +141,12 @@ public final class Room{
     //게임 입력 (INPUT, BOMB)을 게임루프로 전달, userId는 소켓 세션의 ID
     public synchronized void submitGameInput(int userId, Message request) throws LobbyException{
         if(!playing || game == null){
-            throw new LobbyException("NOT_PLAYING", "게임 중이 아닙니다.");
+            throw new LobbyException(ErrorCode.NOT_PLAYING);
         }
         try {
             game.submit(userId, request);
         } catch (IllegalArgumentException error) {
-            throw new LobbyException("INVALID_INPUT", "입력 값을 확인하세요");
+            throw new LobbyException(ErrorCode.INVALID_INPUT);
         }
     }
 
