@@ -152,17 +152,19 @@ public final class ClientMain {
         }
     }
 
-    /** 본문 형식: 방장ID|userId:닉네임:준비,... */
+    /** 참가자별 준비·캐릭터 선택과 방의 현재 맵을 표시한다. */
     private static void printRoomInfo(int roomId, String body) {
-        String[] parts = body.split("[|]", 2);
-        System.out.println("[방 " + roomId + " 정보] 방장: " + parts[0]);
+        String[] parts = body.split("[|]", -1);
+        String map = parts.length == 3 ? " / 맵: " + parts[2] : "";
+        System.out.println("[방 " + roomId + " 정보] 방장: " + parts[0] + map);
         if (parts.length < 2 || parts[1].isEmpty()) {
             return;
         }
         for (String player : parts[1].split(",")) {
             String[] f = player.split(":", -1);
-            if (f.length == 3) {
-                System.out.printf("  %s번 %s%s%n", f[0], f[1], Boolean.parseBoolean(f[2]) ? " (준비)" : "");
+            if (f.length == 3 || f.length == 4) {
+                String character = f.length == 4 ? " [" + f[3] + "]" : "";
+                System.out.printf("  %s번 %s%s%s%n", f[0], f[1], character, Boolean.parseBoolean(f[2]) ? " (준비)" : "");
             }
         }
     }
@@ -196,6 +198,10 @@ public final class ClientMain {
                     yield target > 0 ? new Message(MsgType.ROOM_JOIN, roomId, userId, Integer.toString(target)) : null;
                 }
                 case "/leave" -> new Message(MsgType.ROOM_LEAVE, roomId, userId, "");
+                case "/character" -> arg.isEmpty() ? null
+                        : new Message(MsgType.CHARACTER_SELECT, roomId, userId, arg.toUpperCase(Locale.ROOT));
+                case "/map" -> arg.isEmpty() ? null
+                        : new Message(MsgType.MAP_SELECT, roomId, userId, arg.toUpperCase(Locale.ROOT));
                 case "/ready" -> {
                     String value = arg.toLowerCase(Locale.ROOT);
                     yield value.equals("true") || value.equals("false")
@@ -226,6 +232,8 @@ public final class ClientMain {
                 /create 제목          방 만들기
                 /join 방번호          방 입장
                 /leave                방 나가기
+                /character NONE|MUDSKIPPER|CRAB|PLOVER|TURTLE
+                /map 맵코드            맵 선택 (방장, 예: FROST)
                 /ready true|false     준비 / 준비 해제
                 /start                게임 시작 (방장)
                 /move UP|DOWN|LEFT|RIGHT|STOP

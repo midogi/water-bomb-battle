@@ -1,6 +1,7 @@
 package client.ui;
 
 import java.awt.CardLayout;
+import client.game.CoastMap;
 import client.game.GameBoard;
 import client.game.GamePanel;
 import client.game.MatchScreen;
@@ -160,6 +161,8 @@ public class MainFrame extends JFrame implements LoginPanel.LoginListener,
         if (gameRoomId != 0 && gameRoomId != room.roomId()) return;
         currentRoom = room;
         waitingRoom.showRoom(room, myId, roomTitle);
+        waitingRoom.showMap(CoastMap.valueOf(room.map().name()), myId == room.hostId()
+                && room.member(myId) != null ? map -> session.selectMap(room.roomId(), map.layout()) : null);
         if (gameRoomId != 0) return;
         layout.show(screens, WAITING_ROOM);
     }

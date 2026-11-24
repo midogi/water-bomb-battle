@@ -5,6 +5,7 @@ import client.game.GameBoard;
 import client.resource.Avatar;
 import client.net.ReceiverThread;
 import common.Constants;
+import common.model.ArenaMap;
 import common.model.Direction;
 import common.protocol.Message;
 import common.protocol.MsgType;
@@ -126,17 +127,12 @@ final class LobbySession implements Runnable {
         sendRoomRequest(MsgType.READY, roomId, Boolean.toString(ready));
     }
 
-    /** 선택한 캐릭터의 코드를 보내는 경로다. 공통 메시지에 선택 기능이 아직 없으면 화면에 사유를 알린다. */
     void selectCharacter(int roomId, Avatar avatar) {
-        // 네트워크 담당이 공통 타입을 등록하면 같은 송신 경로를 그대로 사용한다.
-        MsgType type;
-        try {
-            type = MsgType.valueOf("CHARACTER_SELECT");
-        } catch (IllegalArgumentException missingType) {
-            listener.requestRejected("현재 접속 버전은 캐릭터 선택을 지원하지 않습니다.");
-            return;
-        }
-        sendRoomRequest(type, roomId, avatar.name());
+        sendRoomRequest(MsgType.CHARACTER_SELECT, roomId, avatar.name());
+    }
+
+    void selectMap(int roomId, ArenaMap map) {
+        sendRoomRequest(MsgType.MAP_SELECT, roomId, map.name());
     }
 
     /** 방장의 시작 버튼에서 호출한다. START를 보낸 뒤 게임 화면은 GAME_INIT을 받을 때까지 기다린다. */

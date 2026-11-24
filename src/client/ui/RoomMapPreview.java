@@ -8,7 +8,7 @@ import java.awt.image.BufferedImage;
 import java.util.function.Consumer;
 import javax.swing.*;
 
-/** 대기실의 작은 맵 버튼과 확대 도감. 서버 선택 규약이 없어도 모든 참가자가 지형을 살펴볼 수 있다. */
+/** 대기실의 작은 맵 버튼과 확대 도감. */
 final class RoomMapPreview extends JButton {
     private CoastMap selected = CoastMap.TIDE;
     private Consumer<CoastMap> onPick;
@@ -21,7 +21,7 @@ final class RoomMapPreview extends JButton {
         addActionListener(event -> browse());
     }
 
-    /** 프리뷰 방장이면 선택을 공유할 함수를 받는다. 실제 방과 일반 참가자는 도감만 열 수 있다. */
+    /** 방장에게는 선택 버튼을, 다른 참가자에게는 도감 버튼을 보여 준다. */
     void setMap(CoastMap map, Consumer<CoastMap> onPick) {
         if (map != selected || getIcon() == null) setIcon(icon(map, 7, false));
         selected = map;

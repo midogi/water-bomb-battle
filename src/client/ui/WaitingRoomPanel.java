@@ -155,7 +155,7 @@ final class WaitingRoomPanel extends CoastPanel {
     }
 
     /** 두 창 미리보기에서 같은 선택을 표시하고 방장에게만 변경 동작을 연결한다. */
-    void showPreviewMap(client.game.CoastMap map, java.util.function.Consumer<client.game.CoastMap> onPick) {
+    void showMap(client.game.CoastMap map, java.util.function.Consumer<client.game.CoastMap> onPick) {
         mapPreview.setMap(map, onPick);
     }
 
