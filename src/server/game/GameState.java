@@ -9,6 +9,7 @@ import common.protocol.Message;
 import common.protocol.MsgType;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -20,6 +21,7 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.random.RandomGenerator;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /** 방 한 판의 맵, 플레이어, 폭탄 상태를 관리한다. */
 public final class GameState {
@@ -53,6 +55,11 @@ public final class GameState {
             ItemView target = playerItems.get(targetId);
             ItemView viewer = playerItems.get(viewerId);
             return viewerId == targetId || target == null || !target.invisible() || (viewer != null && viewer.hasLens());
+        }
+
+        /** 투명화한 캐릭터는 볼 수 있는 사람한테만 좌표를 보낸다. */
+        public String stateBodyFor(int viewerId) {
+            return stateBody(tick, players.stream().filter(player -> canSee(viewerId, player.userId())), bombs);
         }
     }
 
@@ -147,12 +154,18 @@ public final class GameState {
 
     /** 매 틱의 위치와 생존 상태, 남은 폭탄 시간을 넘긴다. 폭탄 시간은 틱 단위다. */
     public Message stateMessage() {
-        String positions = players.values().stream().map(player ->
-                player.userId() + ":" + player.x + ":" + player.y + ":" + player.state)
+        Stream<PlayerView> views = players.values().stream().map(player ->
+                new PlayerView(player.userId(), player.x, player.y, player.state));
+        return message(MsgType.STATE, stateBody(tick, views, bombs.values()));
+    }
+
+    private static String stateBody(long tick, Stream<PlayerView> players, Collection<Bomb> bombs) {
+        String positions = players.map(player ->
+                player.userId() + ":" + player.x() + ":" + player.y() + ":" + player.state())
                 .collect(Collectors.joining(","));
-        String bombList = bombs.values().stream().map(bomb -> bomb.col() + ":" + bomb.row()
+        String bombList = bombs.stream().map(bomb -> bomb.col() + ":" + bomb.row()
                 + ":" + Math.max(0, bomb.explodeAtTick() - tick)).collect(Collectors.joining(","));
-        return message(MsgType.STATE, tick + "|" + positions + "|" + bombList);
+        return tick + "|" + positions + "|" + bombList;
     }
 
     /** 입력, 이동, 아이템 사용, 설치, 폭발·탈락 순서로 한 틱을 처리한다. */

@@ -15,10 +15,16 @@ public enum ErrorCode {
     ROOM_PLAYING("게임 중에는 할 수 없는 요청입니다."),
     ALREADY_IN_ROOM("이미 방에 들어가 있습니다."),
     NOT_IN_ROOM("방에 들어가 있지 않습니다."),
+    INVALID_CHARACTER("캐릭터 코드를 확인하세요."),
+    CHARACTER_TAKEN("다른 참가자가 선택한 캐릭터입니다."),
+    ALREADY_READY("준비를 취소한 뒤 캐릭터를 바꿔 주세요."),
+    CHARACTER_REQUIRED("캐릭터를 먼저 선택해 주세요."),
+    NOT_ALL_SELECTED("모든 참가자가 캐릭터를 선택해야 합니다."),
+    INVALID_MAP("맵 코드를 확인하세요."),
 
     //준비,시작
     INVALID_READY("준비 값은 true 혹은 false 입니다."),
-    NOT_HOST("방장만 시작할 수 있습니다."),
+    NOT_HOST("방장만 할 수 있는 요청입니다."),
     ALREADY_PLAYING("이미 게임 중입니다."),
     NOT_ENOUGH_PLAYERS("최소 인원은 2명입니다."),
     NOT_ALL_READY("모두 준비되지 않았습니다."),
@@ -26,6 +32,8 @@ public enum ErrorCode {
     //게임
     NOT_PLAYING("게임 중이 아닙니다."),
     INVALID_INPUT("입력 값을 확인하세요"),
+    INVALID_ITEM("아이템 코드를 확인하세요."),
+    GAME_INPUT_BUSY("입력을 처리할 수 없습니다. 잠시 뒤 다시 시도해 주세요."),
 
     //채팅
     EMPTY_CHAT("채팅 내용을 입력하세요"),

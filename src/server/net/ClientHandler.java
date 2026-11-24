@@ -1,5 +1,8 @@
 package server.net;
 
+import common.model.ArenaMap;
+import common.model.CharacterType;
+import common.model.ItemType;
 import common.protocol.Message;
 import common.protocol.MessageCodec;
 import common.protocol.MsgType;
@@ -53,22 +56,21 @@ public final class ClientHandler implements Runnable{
     private void handleLobby(Message request) throws LobbyException{
         switch(request.type()) {
             case ROOM_LIST -> reply(MsgType.ROOM_LIST, rooms.listBody());
-            case ROOM_CREATE -> sendRoomInfo(rooms.create(request.body(), session));
-            case ROOM_JOIN -> sendRoomInfo(rooms.join(parseRoomId(request.body()), session));
+            case ROOM_CREATE -> rooms.create(request.body(), session).broadcastInfo();
+            case ROOM_JOIN -> rooms.join(parseRoomId(request.body()), session).broadcastInfo();
             case ROOM_LEAVE -> {
                 leaveRoom();
                 reply(MsgType.ROOM_LIST, rooms.listBody());
             }
-            case READY-> {
-                Room room = currentRoom();
-                room.setReady(userId, parseReady(request.body()));
-                sendRoomInfo(room);
-            }
+            case CHARACTER_SELECT -> currentRoom().selectCharacter(userId, parseCharacter(request.body()));
+            case MAP_SELECT -> currentRoom().selectMap(userId, parseMap(request.body()));
+            case READY -> currentRoom().setReady(userId, parseReady(request.body()));
             case START -> {
                 Room room = currentRoom();
                 room.startGame(userId);
             }
             case INPUT, BOMB -> currentRoom().submitGameInput(userId, request);
+            case ITEM_USE -> currentRoom().useItem(userId, parseItem(request.body()));
             case CHAT -> {
                 Room room = currentRoom();
                 String text = request.body().strip();
@@ -96,10 +98,6 @@ public final class ClientHandler implements Runnable{
             throw new LobbyException(ErrorCode.INVALID_ROOM_ID);
         }
     }
-    private void sendRoomInfo(Room room){
-        room.broadcast(new Message(MsgType.ROOM_INFO, room.id(), 0, room.infoBody()));
-    }
-
     private void leaveRoom(){
        rooms.leave(session);
     }
@@ -158,6 +156,30 @@ public final class ClientHandler implements Runnable{
             return false;
         }
         throw new LobbyException(ErrorCode.INVALID_READY);
+    }
+
+    private CharacterType parseCharacter(String body) throws LobbyException {
+        try {
+            return CharacterType.valueOf(body.strip());
+        } catch (IllegalArgumentException error) {
+            throw new LobbyException(ErrorCode.INVALID_CHARACTER);
+        }
+    }
+
+    private ArenaMap parseMap(String body) throws LobbyException {
+        try {
+            return ArenaMap.valueOf(body.strip());
+        } catch (IllegalArgumentException error) {
+            throw new LobbyException(ErrorCode.INVALID_MAP);
+        }
+    }
+
+    private ItemType parseItem(String body) throws LobbyException {
+        try {
+            return ItemType.valueOf(body.strip());
+        } catch (IllegalArgumentException error) {
+            throw new LobbyException(ErrorCode.INVALID_ITEM);
+        }
     }
 
     private int parseEmoji(String body) throws LobbyException {

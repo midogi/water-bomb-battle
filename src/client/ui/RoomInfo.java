@@ -7,9 +7,10 @@ import java.util.HashMap;
 import client.resource.Avatar;
 import client.game.GamePanel.Appearance;
 import common.Constants;
+import common.model.ArenaMap;
 
 // ROOM_INFO 한 건에 담긴 방장과 참가자 목록이다.
-record RoomInfo(int roomId, int hostId, List<Member> members) {
+record RoomInfo(int roomId, int hostId, List<Member> members, ArenaMap map) {
     record Member(int id, String nickname, boolean ready, Avatar avatar) { }
 
     /** showRoom()이 내 번호로 참가자를 찾을 때 쓴다. 목록에 없는 번호라면 null을 돌려준다. */
@@ -39,8 +40,8 @@ record RoomInfo(int roomId, int hostId, List<Member> members) {
 
     /** LobbySession이 ROOM_INFO 본문을 방장과 참가자 목록으로 읽을 때 호출한다. 캐릭터 필드가 없으면 미선택으로 채운다. */
     static RoomInfo parse(int roomId, String body) {
-        String[] parts = body.split("[|]", 2);
-        if (parts.length != 2) {
+        String[] parts = body.split("[|]", -1);
+        if (parts.length != 2 && parts.length != 3) {
             throw new IllegalArgumentException("방 정보 형식을 확인해 주세요.");
         }
         List<Member> members = new ArrayList<>();
@@ -55,6 +56,7 @@ record RoomInfo(int roomId, int hostId, List<Member> members) {
                         Boolean.parseBoolean(fields[2]), fields.length == 4 ? Avatar.valueOf(fields[3]) : Avatar.NONE));
             }
         }
-        return new RoomInfo(roomId, Integer.parseInt(parts[0]), List.copyOf(members));
+        ArenaMap map = parts.length == 3 ? ArenaMap.valueOf(parts[2]) : ArenaMap.TIDE;
+        return new RoomInfo(roomId, Integer.parseInt(parts[0]), List.copyOf(members), map);
     }
 }

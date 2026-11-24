@@ -1,19 +1,16 @@
 # 메시지 명세 초안
 
-## 캐릭터 선택 연동안 (화면 브랜치, 네트워크 담당과 합의 후 적용)
+## 대기실 캐릭터와 맵 선택
 
-- 요청 후보 `CHARACTER_SELECT|roomId|userId|캐릭터코드`. 코드는
-  `NONE`, `MUDSKIPPER`, `CRAB`, `PLOVER`, `TURTLE`이며 NONE은 선택 해제다.
-- 방 입장 초기값은 NONE, 준비 전이다. 서버는 소켓에 속한 방과 사용자로 요청자를 식별한다.
-  방 단위로 요청을 순차 처리하고, 새 선택의 점유 여부를 확인한 뒤에만 기존 선택을 교체한다.
-  중복 요청은 요청자에게 ERROR를 보내며 기존 선택은 유지한다. 준비 중이거나 게임 중인 변경도 거절한다.
-- 성공과 퇴장 시 같은 방에 ROOM_INFO 전체를 방송한다. 참가자 항목의 네 번째 필드가 캐릭터다.
-  예: `ROOM_INFO|3|0|2|1:물방울:false:CRAB,2:파랑:true:TURTLE`.
-  이전 3필드 형식의 참가자는 화면에서 미선택으로 표시한다.
-- NONE은 준비할 수 없다. START는 방장·인원·전원 준비·전원 선택·중복 없음을 서버가 재확인한다.
-  마지막 확정 ROOM_INFO를 GAME_INIT보다 먼저 전달하면 게임 화면이 사용자 ID별 선택을 이어받는다.
-- 현재 WaitingRoomPreview는 이 흐름을 두 로컬 창으로 재현한다. 실제 서버 적용 시 MsgType 등록,
-  방 처리기와 콘솔 클라이언트의 ROOM_INFO 파서도 함께 반영한다.
+- 입장 시 캐릭터는 `NONE`, 준비 상태는 준비 전이다. 준비한 참가자는 준비를 취소한 뒤 캐릭터를 바꿀 수 있다. 이미 선택된 캐릭터를 요청하면 `CHARACTER_TAKEN`을 보내고 기존 선택을 유지한다.
+- 방장은 대기 중에만 `MAP_SELECT`로 맵을 바꿀 수 있다. 새 방의 기본 맵은 `TIDE`이며, 맵 코드는 `common.model.ArenaMap`과 같다.
+- 선택이 바뀌면 같은 방에 `ROOM_INFO`를 보낸다. 참가자 항목의 네 번째 필드는 캐릭터 코드이고, 마지막 필드는 맵 코드다.
+
+```text
+ROOM_INFO|3|0|2|1:물방울:false:CRAB,2:파랑:true:TURTLE|FROST
+```
+
+- 방장은 2~4명 전원이 캐릭터를 선택하고 방장 외 전원이 준비했을 때 시작할 수 있다. 서버는 확정된 `ROOM_INFO`를 먼저 보내고, 선택한 맵의 배치와 참가자 좌표를 `GAME_INIT`으로 전달한다.
 
 기준: `development-rules.pdf` (2026-11-05). 이 문서는 원본을 개발 중에 보기 쉽게 옮긴 요약이며, 미정 사항은 확정된 규칙으로 취급하지 않습니다.
 
@@ -41,10 +38,13 @@
 | ROOM_CREATE | 방 제목 | 방 생성 후 방장으로 입장 |
 | ROOM_JOIN | 입장할 roomId | 방 입장 |
 | ROOM_LEAVE | 없음 | 방 퇴장; 게임 중이면 탈락 |
+| CHARACTER_SELECT | NONE / MUDSKIPPER / CRAB / PLOVER / TURTLE | 캐릭터 선택 또는 해제 |
+| MAP_SELECT | 맵 코드 | 방장이 대기 중에 맵 선택 |
 | READY | true / false | 준비 상태 |
-| START | 없음 | 방장 요청, 전원 준비 후 시작 |
+| START | 없음 | 방장 요청, 전원 캐릭터 선택 및 방장 외 전원 준비 후 시작 |
 | INPUT | UP / DOWN / LEFT / RIGHT / STOP | 키를 누르거나 뗄 때 방향 전달; 좌표 전송 없음 |
 | BOMB | 없음 | 현재 위치에 물폭탄 설치 |
+| ITEM_USE | INVISIBILITY / LENS / NEEDLE / DART | 보유 아이템 사용 요청 |
 | CHAT | 메시지 | 같은 방 채팅 |
 | EMOJI | 이모티콘 번호 | 같은 방 이모티콘 |
 
@@ -57,9 +57,10 @@
 | LOGIN_OK | userId | ID 배정 |
 | ERROR | 코드:메시지 | 요청 거절 |
 | ROOM_LIST | roomId:제목:인원:상태,... | 상태 WAIT / PLAYING |
-| ROOM_INFO | 방장ID / userId:닉네임:준비,... | 참가자·준비 상태 |
+| ROOM_INFO | 방장ID / userId:닉네임:준비:캐릭터,... / 맵코드 | 참가자, 준비·캐릭터 상태, 선택한 맵 |
 | GAME_INIT | 맵 문자열 / userId:x:y,... | `.` 빈칸, `#` 벽, `B` 상자 |
 | STATE | tick / id:x:y:상태,... / col:row:남은틱,... | 매 틱의 플레이어·폭탄 상태 |
+| ITEM_STATE | col:row:종류,... / 종류:수량,... / 투명화 / 렌즈 | 바닥 아이템과 수신자 본인의 소지 수량·효과 |
 | EVENT | 종류:값... | 폭발, 상자, 아이템, 피격, 탈락 |
 | CHAT | userId:닉네임 / 메시지 | 채팅 중계 |
 | EMOJI | userId:이모티콘번호 | 이모티콘 중계 |
@@ -79,9 +80,12 @@ EVENT 본문:
 EXPLODE:col:row:상:하:좌:우
 BOX_BREAK:col:row:아이템
 ITEM_GET:userId:col:row:종류
+ITEM_USED:userId:종류
 TRAPPED:userId
 DEAD:userId
 ```
+
+`ITEM_STATE`는 수신자의 사용자 ID를 헤더에 담아 경기 시작과 내용이 바뀔 때 보냅니다. 빈 목록은 빈 필드, 시야 효과는 `true` 또는 `false`로 표시합니다. `STATE`는 수신자에게 보이는 플레이어 좌표를 넣습니다. 투명화한 플레이어의 좌표는 본인과 렌즈가 켜진 상대에게 전달합니다. 아이템이 없거나 효과를 적용할 조건이 맞지 않으면 현재 소지 수량을 유지합니다.
 
 ## 서버 기준값
 
@@ -93,6 +97,4 @@ DEAD:userId
 
 ## 기본 코드 범위
 
-현재 서버는 LOGIN과 ROOM_LIST만 처리합니다. 미구현 요청은 `ERROR`로 응답합니다.
-`NOT_LOGGED_IN`, `ALREADY_LOGGED_IN`, `INVALID_NICK`, `NOT_IMPLEMENTED`는 접속 확인용 코드이며 최종 에러 목록은 팀 회의에서 확정합니다.
-방·게임 큐·GameLoop·UI·닉네임 중복 검사는 각 담당자가 구현합니다.
+서버는 로그인, 로비, 캐릭터·맵 선택, 준비·경기 시작, 이동·물폭탄, 아이템 사용, 채팅·이모티콘을 처리합니다. 거절 응답의 코드는 `common.protocol.ErrorCode`에서 정의합니다.

@@ -5,7 +5,10 @@ import client.game.GameBoard;
 import client.resource.Avatar;
 import client.net.ReceiverThread;
 import common.Constants;
+import common.model.ArenaMap;
 import common.model.Direction;
+import common.model.ItemType;
+import common.protocol.ItemState;
 import common.protocol.Message;
 import common.protocol.MsgType;
 import java.io.IOException;
@@ -29,6 +32,7 @@ final class LobbySession implements Runnable {
         void mapEvent(int roomId, String body);
         /** 같은 틱에 받은 참가자와 물풍선 목록을 방 번호와 함께 전달한다. 현재 경기인지 확인하는 곳은 MainFrame이다. */
         void stateReceived(int roomId, GameBoard.State state);
+        void itemStateReceived(int roomId, ItemState state);
         /** 승자 번호 또는 무승부 명단을 현재 경기 화면에 전달한다. */
         void gameFinished(int roomId, String body);
         /** 수신한 CHAT을 화면에 표시할 한 줄로 정리해 해당 방에 전달한다. */
@@ -126,17 +130,12 @@ final class LobbySession implements Runnable {
         sendRoomRequest(MsgType.READY, roomId, Boolean.toString(ready));
     }
 
-    /** 선택한 캐릭터의 코드를 보내는 경로다. 공통 메시지에 선택 기능이 아직 없으면 화면에 사유를 알린다. */
     void selectCharacter(int roomId, Avatar avatar) {
-        // 네트워크 담당이 공통 타입을 등록하면 같은 송신 경로를 그대로 사용한다.
-        MsgType type;
-        try {
-            type = MsgType.valueOf("CHARACTER_SELECT");
-        } catch (IllegalArgumentException missingType) {
-            listener.requestRejected("현재 접속 버전은 캐릭터 선택을 지원하지 않습니다.");
-            return;
-        }
-        sendRoomRequest(type, roomId, avatar.name());
+        sendRoomRequest(MsgType.CHARACTER_SELECT, roomId, avatar.name());
+    }
+
+    void selectMap(int roomId, ArenaMap map) {
+        sendRoomRequest(MsgType.MAP_SELECT, roomId, map.name());
     }
 
     /** 방장의 시작 버튼에서 호출한다. START를 보낸 뒤 게임 화면은 GAME_INIT을 받을 때까지 기다린다. */
@@ -147,6 +146,10 @@ final class LobbySession implements Runnable {
     /** 스페이스바 입력을 서버에 보낸다. 설치 좌표와 허용 여부는 서버가 사용자 상태에서 판단한다. */
     void placeBomb(int roomId) {
         sendRoomRequest(MsgType.BOMB, roomId, "");
+    }
+
+    void useItem(int roomId, ItemType item) {
+        sendRoomRequest(MsgType.ITEM_USE, roomId, item.name());
     }
 
     /** 게임 화면에서 방향이 바뀌면 INPUT을 보낸다. 모든 방향키를 뗐을 때는 STOP도 같은 경로를 사용한다. */
@@ -191,6 +194,12 @@ final class LobbySession implements Runnable {
             case STATE -> {
                 GameBoard.State state = GameBoard.parseState(message.body());
                 SwingUtilities.invokeLater(() -> listener.stateReceived(message.roomId(), state));
+            }
+            case ITEM_STATE -> {
+                if (message.userId() == userId) {
+                    ItemState state = ItemState.parse(message.body());
+                    SwingUtilities.invokeLater(() -> listener.itemStateReceived(message.roomId(), state));
+                }
             }
             case EMOJI -> {
                 String[] fields = message.body().split(":", -1);

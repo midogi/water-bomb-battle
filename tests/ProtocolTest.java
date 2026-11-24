@@ -1,6 +1,8 @@
 package tests;
 
 import common.Constants;
+import common.model.ItemType;
+import common.protocol.ItemState;
 import common.protocol.Message;
 import common.protocol.MessageCodec;
 import common.protocol.MsgType;
@@ -25,6 +27,11 @@ public final class ProtocolTest {
         Message state = Message.fromWire(
                 "STATE|3|0|418|1:200:120:ALIVE,2:360:80:TRAPPED|5:3:12");
         check(state.body().split("[|]", 3).length == 3, "STATE fields preserved");
+        ItemState items = ItemState.parse("2:1:DART,4:2:LENS|NEEDLE:2|true|false");
+        check(items.ground().get(0).type() == ItemType.DART && items.inventory().get(ItemType.NEEDLE) == 2
+                && items.invisible() && !items.lensActive(), "Item state preserves ground, inventory and effects");
+        check(ItemState.parse(items.toWire()).equals(items), "Item state round trips");
+        check(ItemState.parse("||false|false").ground().isEmpty(), "Empty ground list retained");
 
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         DataOutputStream output = new DataOutputStream(buffer);

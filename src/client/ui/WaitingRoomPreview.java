@@ -65,7 +65,7 @@ public final class WaitingRoomPreview {
 
     /** 현재 방장과 참가자 목록을 한 시점의 방 정보로 묶는다. publish()와 선택·시작 조건 검사에서 사용한다. */
     private RoomInfo snapshot() {
-        return new RoomInfo(ROOM_ID, hostId, List.copyOf(members.values()));
+        return new RoomInfo(ROOM_ID, hostId, List.copyOf(members.values()), selectedMap.layout());
     }
 
     /** 참가자의 상태가 바뀌면 같은 방 정보를 모든 창의 showRoom()에 보내되 각 창에는 그 사람의 번호를 넘긴다. */
@@ -73,7 +73,7 @@ public final class WaitingRoomPreview {
         RoomInfo room = snapshot();
         views.forEach((id, view) -> {
             view.waiting.showRoom(room, id, "해안 연습방");
-            view.waiting.showPreviewMap(selectedMap, id == hostId ? this::selectMap : null);
+            view.waiting.showMap(selectedMap, id == hostId ? this::selectMap : null);
         });
     }
 

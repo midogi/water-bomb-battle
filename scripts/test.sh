@@ -6,3 +6,4 @@ find tests -name '*.java' -print > out/test-sources.txt
 javac --release 17 -encoding UTF-8 -cp out -d out @out/test-sources.txt
 java -ea -cp out tests.ProtocolTest
 java -ea -cp out tests.GameLogicTest
+java -ea -cp out tests.LobbySelectionTest
