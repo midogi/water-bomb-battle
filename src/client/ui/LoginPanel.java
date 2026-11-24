@@ -14,23 +14,20 @@ import javax.swing.JTextField;
 // 닉네임을 입력받고, 유효한 닉네임을 바깥에 전달하는 화면이다.
 public class LoginPanel extends CoastPanel {
 
-    // 닉네임을 전달받는 쪽이 구현할 메서드를 정한다.
-    // MainFrame이 이 인터페이스를 구현한다.
+    // LoginPanel은 입력 검사까지만 맡는다. MainFrame이 이 리스너를 구현해 실제 접속을 시작한다.
     public interface LoginListener {
+        /** 입력 검사를 통과한 닉네임을 MainFrame에 전달하는 약속이다. 버튼 클릭과 Enter 입력이 모두 여기로 이어진다. */
         void loginRequested(String nickname);
     }
 
     // 입력칸을 필드로 두면 아래의 내부 리스너에서도 입력값을 읽을 수 있다.
-    // 16은 입력칸의 표시 폭이다.
     private final JTextField nicknameField = new JTextField(16);
     private final JButton enterButton = new JButton("입장");
 
-    // 닉네임을 전달받을 객체를 기억한다.
     private final LoginListener loginListener;
 
-    // Consumer<String> 대신 직접 정의한 LoginListener를 전달받는다.
+    /** 로그인 입력칸과 버튼을 만들고 같은 입력 검사 동작을 연결한다. 결과는 전달받은 LoginListener에 알린다. */
     public LoginPanel(LoginListener loginListener) {
-        // this.loginListener는 필드, 오른쪽 loginListener는 생성자의 매개변수다.
         this.loginListener = loginListener;
 
         // 제목, 안내 문구, 입력칸, 버튼을 가운데에 한 줄씩 배치한다.
@@ -55,7 +52,6 @@ public class LoginPanel extends CoastPanel {
         gbc.gridy = 3; // 네 번째 줄: 입장 버튼
         add(enterButton, gbc);
 
-        // 이벤트를 처리할 내부 클래스의 객체를 하나 만든다.
         LoginActionListener listener = new LoginActionListener();
 
         // 버튼을 클릭하거나 입력칸에서 Enter를 누르면
@@ -64,7 +60,7 @@ public class LoginPanel extends CoastPanel {
         nicknameField.addActionListener(listener);
     }
 
-    // 서버의 응답을 기다리는 동안 같은 요청을 두 번 보내지 않는다.
+    /** MainFrame이 로그인 요청을 시작하거나 접속이 끝났을 때 호출해 입력칸과 버튼의 사용 가능 상태를 바꾼다. */
     public void setConnecting(boolean connecting) {
         nicknameField.setEnabled(!connecting);
         enterButton.setEnabled(!connecting);
@@ -75,9 +71,9 @@ public class LoginPanel extends CoastPanel {
     // LoginPanel 안에서만 사용하므로 private으로 둔다.
     private class LoginActionListener implements ActionListener {
 
+        /** 입장 버튼 또는 Enter를 누르면 닉네임 양끝의 공백을 제거한다. 빈 이름이면 안내하고, 유효하면 로그인을 요청한다. */
         @Override
         public void actionPerformed(ActionEvent e) {
-            // 입력 검사
             String nickname = nicknameField.getText().strip();
 
             // 아무것도 입력하지 않았거나 공백만 입력했다면 다시 입력받는다.
@@ -91,8 +87,6 @@ public class LoginPanel extends CoastPanel {
                 return; // 빈 닉네임이 아래로 전달되지 않게 여기서 끝낸다.
             }
 
-         
-            // 생성자에서 전달받은 객체의 loginRequested()를 호출한다.
             loginListener.loginRequested(nickname);
         }
     }

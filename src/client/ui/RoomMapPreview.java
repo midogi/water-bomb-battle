@@ -1,46 +1,79 @@
 package client.ui;
 
-import client.resource.GameImages;
-import java.awt.Graphics2D;
-import java.awt.RenderingHints;
+import client.game.CoastMap;
+import client.game.MapTiles;
+import common.Constants;
+import java.awt.*;
 import java.awt.image.BufferedImage;
-import javax.swing.ImageIcon;
+import java.util.function.Consumer;
+import javax.swing.*;
 
-// 대기실 썸네일과 두 창 미리보기가 같은 타일 배치를 사용한다.
-final class RoomMapPreview {
-    private static final int TILE = 8;
-    private static final ImageIcon ICON = draw();
+/** 대기실의 작은 맵 버튼과 확대 도감. 서버 선택 규약이 없어도 모든 참가자가 지형을 살펴볼 수 있다. */
+final class RoomMapPreview extends JButton {
+    private CoastMap selected = CoastMap.TIDE;
+    private Consumer<CoastMap> onPick;
 
-    static String[] rows() {
-        String wall = "###############";
-        String lane = "#.............#";
-        String boxes = "#.B.B.B.B.B.B.#";
-        return new String[] {wall, lane, boxes, lane, boxes, lane, boxes,
-                lane, boxes, lane, boxes, lane, wall};
+    RoomMapPreview() {
+        setHorizontalTextPosition(CENTER);
+        setVerticalTextPosition(BOTTOM);
+        setMargin(new Insets(0, 0, 0, 0));
+        setMap(selected, null);
+        addActionListener(event -> browse());
     }
 
-    static ImageIcon icon() {
-        return ICON;
+    /** 프리뷰 방장이면 선택을 공유할 함수를 받는다. 실제 방과 일반 참가자는 도감만 열 수 있다. */
+    void setMap(CoastMap map, Consumer<CoastMap> onPick) {
+        if (map != selected || getIcon() == null) setIcon(icon(map, 7, false));
+        selected = map;
+        this.onPick = onPick;
+        setText(onPick == null ? "맵 도감" : "맵 선택");
+        setToolTipText(map.title + " · 지형 확대");
     }
 
-    private static ImageIcon draw() {
-        String[] rows = rows();
-        BufferedImage floor = GameImages.load("floor.png");
-        BufferedImage wall = GameImages.load("wall.png");
-        BufferedImage crate = GameImages.load("crate.png");
-        BufferedImage result = new BufferedImage(rows[0].length() * TILE, rows.length * TILE,
+    /** 파괴 후 보기를 선택하면 상자만 바닥으로 그려, 고정 벽 사이에 남는 길을 비교할 수 있다. */
+    private void browse() {
+        JComboBox<CoastMap> list = new JComboBox<>(CoastMap.values());
+        list.setSelectedItem(selected);
+        JCheckBox cleared = new JCheckBox("상자를 모두 부순 뒤");
+        JLabel picture = new JLabel();
+        JLabel detail = new JLabel();
+        Runnable refresh = () -> {
+            CoastMap map = (CoastMap) list.getSelectedItem();
+            picture.setIcon(icon(map, 22, cleared.isSelected()));
+            detail.setText(map.description);
+        };
+        list.addActionListener(event -> refresh.run());
+        cleared.addActionListener(event -> refresh.run());
+        refresh.run();
+        JPanel contents = new JPanel(new BorderLayout(4, 4));
+        contents.add(list, BorderLayout.NORTH);
+        contents.add(picture, BorderLayout.CENTER);
+        JPanel notes = new JPanel(new GridLayout(2, 1));
+        notes.add(detail);
+        notes.add(cleared);
+        contents.add(notes, BorderLayout.SOUTH);
+        if (onPick == null) {
+            JOptionPane.showMessageDialog(this, contents, "맵 도감", JOptionPane.PLAIN_MESSAGE);
+        } else if (JOptionPane.showConfirmDialog(this, contents, "대기실 맵 선택",
+                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) == JOptionPane.OK_OPTION && onPick != null) {
+            onPick.accept((CoastMap) list.getSelectedItem());
+        }
+    }
+
+    /** 실제 게임과 같은 타일을 축소해서 표시한다. 도감에서 상자를 숨겨도 원본 배치는 그대로다. */
+    private static ImageIcon icon(CoastMap map, int size, boolean cleared) {
+        BufferedImage result = new BufferedImage(Constants.MAP_COLUMNS * size, Constants.MAP_ROWS * size,
                 BufferedImage.TYPE_INT_RGB);
+        MapTiles art = MapTiles.forMap(map);
+        String[] rows = map.rows();
         Graphics2D g = result.createGraphics();
         try {
             g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-            for (int row = 0; row < rows.length; row++) {
-                for (int col = 0; col < rows[row].length(); col++) {
-                    BufferedImage tile = switch (rows[row].charAt(col)) {
-                        case '#' -> wall;
-                        case 'B' -> crate;
-                        default -> floor;
-                    };
-                    g.drawImage(tile, col * TILE, row * TILE, TILE, TILE, null);
+            for (int y = 0; y < rows.length; y++) {
+                for (int x = 0; x < rows[y].length(); x++) {
+                    char tile = rows[y].charAt(x);
+                    g.drawImage(art.tile(cleared && tile == 'B' ? '.' : tile, x, y),
+                            x * size, y * size, size, size, null);
                 }
             }
         } finally {
