@@ -3,6 +3,8 @@ package server.lobby;
 import common.Constants;
 import common.model.ArenaMap;
 import common.model.CharacterType;
+import common.model.ItemType;
+import common.protocol.ItemState;
 import common.protocol.Message;
 import common.protocol.MsgType;
 import java.util.LinkedHashMap;
@@ -11,6 +13,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.StringJoiner;
 import java.util.ArrayList;
+import java.util.Comparator;
 import server.game.GameLoop;
 import server.game.GameState;
 import server.net.UserSession;
@@ -23,6 +26,7 @@ public final class Room{
     private final Map<Integer, UserSession> members = new LinkedHashMap<>();
     private final Map<Integer, CharacterType> characters = new LinkedHashMap<>();
     private final Set<Integer> ready = new LinkedHashSet<>();
+    private final Map<Integer, ItemState> lastItemStates = new LinkedHashMap<>();
     private ArenaMap selectedMap = ArenaMap.TIDE;
     private int hostId;
     private boolean playing;
@@ -57,6 +61,7 @@ public final class Room{
         int leaverId = session.userId();
         if(members.remove(leaverId) == null) {return;}
         characters.remove(leaverId);
+        lastItemStates.remove(leaverId);
         ready.remove(leaverId);
         session.setRoomId(Constants.LOBBY_ROOM_ID);
 
@@ -184,6 +189,7 @@ public final class Room{
         GameState state = GameState.arena(id, selectedMap, new ArrayList<>(members.keySet()), MOVE_PIXELS_PER_TICK);
         GameLoop loop = new GameLoop(state, this::onGameMessage);
         game = loop;
+        lastItemStates.clear();
         playing = true;
         // 화면이 캐릭터와 맵을 받은 다음 GAME_INIT으로 넘어가게 한다.
         broadcastInfo();
@@ -196,17 +202,50 @@ public final class Room{
             throw new LobbyException(ErrorCode.NOT_PLAYING);
         }
         try {
-            game.submit(userId, request);
+            if (!game.submit(userId, request)) {
+                throw new LobbyException(ErrorCode.GAME_INPUT_BUSY);
+            }
         } catch (IllegalArgumentException error) {
             throw new LobbyException(ErrorCode.INVALID_INPUT);
         }
     }
 
-    private synchronized void onGameMessage(Message message){
+    public synchronized void useItem(int userId, ItemType item) throws LobbyException {
+        if (!playing || game == null) {
+            throw new LobbyException(ErrorCode.NOT_PLAYING);
+        }
+        if (!game.useItem(userId, item)) {
+            throw new LobbyException(ErrorCode.GAME_INPUT_BUSY);
+        }
+    }
+
+    private synchronized void onGameMessage(Message message) {
+        if (game == null) return;
+        if (message.type() == MsgType.STATE) {
+            broadcastGameState(game.snapshot());
+            return;
+        }
         broadcast(message);
-            if(message.type() == MsgType.RESULT) {
-                finishGame();
+        if (message.type() == MsgType.RESULT) {
+            finishGame();
+        }
+    }
+
+    private void broadcastGameState(GameState.Snapshot snapshot) {
+        var ground = snapshot.groundItems().entrySet().stream()
+                .map(entry -> new ItemState.GroundItem(entry.getKey().col(), entry.getKey().row(), entry.getValue()))
+                .sorted(Comparator.comparingInt(ItemState.GroundItem::row).thenComparingInt(ItemState.GroundItem::col))
+                .toList();
+        for (UserSession member : members.values()) {
+            int userId = member.userId();
+            GameState.ItemView view = snapshot.playerItems().get(userId);
+            ItemState items = new ItemState(ground, view.inventory(), view.invisible(), view.hasLens());
+            // STATE는 바뀔 때마다 보내고, 아이템은 바닥이나 자기 인벤토리가 바뀔 때만 보낸다.
+            if (!items.equals(lastItemStates.put(userId, items))) {
+                member.send(new Message(MsgType.ITEM_STATE, id, userId, items.toWire()));
             }
+            member.send(new Message(MsgType.STATE, id, 0, snapshot.stateBodyFor(userId)));
+        }
     }
 
     private void finishGame() {
@@ -216,6 +255,7 @@ public final class Room{
         }
         playing = false;
         ready.clear();
+        lastItemStates.clear();
         broadcastInfo();
     }
 

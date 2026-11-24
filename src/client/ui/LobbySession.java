@@ -7,6 +7,8 @@ import client.net.ReceiverThread;
 import common.Constants;
 import common.model.ArenaMap;
 import common.model.Direction;
+import common.model.ItemType;
+import common.protocol.ItemState;
 import common.protocol.Message;
 import common.protocol.MsgType;
 import java.io.IOException;
@@ -30,6 +32,7 @@ final class LobbySession implements Runnable {
         void mapEvent(int roomId, String body);
         /** 같은 틱에 받은 참가자와 물풍선 목록을 방 번호와 함께 전달한다. 현재 경기인지 확인하는 곳은 MainFrame이다. */
         void stateReceived(int roomId, GameBoard.State state);
+        void itemStateReceived(int roomId, ItemState state);
         /** 승자 번호 또는 무승부 명단을 현재 경기 화면에 전달한다. */
         void gameFinished(int roomId, String body);
         /** 수신한 CHAT을 화면에 표시할 한 줄로 정리해 해당 방에 전달한다. */
@@ -145,6 +148,10 @@ final class LobbySession implements Runnable {
         sendRoomRequest(MsgType.BOMB, roomId, "");
     }
 
+    void useItem(int roomId, ItemType item) {
+        sendRoomRequest(MsgType.ITEM_USE, roomId, item.name());
+    }
+
     /** 게임 화면에서 방향이 바뀌면 INPUT을 보낸다. 모든 방향키를 뗐을 때는 STOP도 같은 경로를 사용한다. */
     void move(int roomId, Direction direction) {
         sendRoomRequest(MsgType.INPUT, roomId, direction.name());
@@ -187,6 +194,12 @@ final class LobbySession implements Runnable {
             case STATE -> {
                 GameBoard.State state = GameBoard.parseState(message.body());
                 SwingUtilities.invokeLater(() -> listener.stateReceived(message.roomId(), state));
+            }
+            case ITEM_STATE -> {
+                if (message.userId() == userId) {
+                    ItemState state = ItemState.parse(message.body());
+                    SwingUtilities.invokeLater(() -> listener.itemStateReceived(message.roomId(), state));
+                }
             }
             case EMOJI -> {
                 String[] fields = message.body().split(":", -1);

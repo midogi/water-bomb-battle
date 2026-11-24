@@ -32,6 +32,8 @@ public enum ErrorCode {
     //게임
     NOT_PLAYING("게임 중이 아닙니다."),
     INVALID_INPUT("입력 값을 확인하세요"),
+    INVALID_ITEM("아이템 코드를 확인하세요."),
+    GAME_INPUT_BUSY("입력을 처리할 수 없습니다. 잠시 뒤 다시 시도해 주세요."),
 
     //채팅
     EMPTY_CHAT("채팅 내용을 입력하세요"),

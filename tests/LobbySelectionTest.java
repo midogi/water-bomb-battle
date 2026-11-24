@@ -3,6 +3,7 @@ package tests;
 import client.game.GameBoard;
 import common.model.ArenaMap;
 import common.protocol.ErrorCode;
+import common.protocol.ItemState;
 import common.protocol.Message;
 import common.protocol.MessageCodec;
 import common.protocol.MsgType;
@@ -40,6 +41,8 @@ public final class LobbySelectionTest {
             guest.expectError(ErrorCode.CHARACTER_REQUIRED);
             host.send(MsgType.START, "");
             host.expectError(ErrorCode.NOT_ALL_SELECTED);
+            guest.send(MsgType.ITEM_USE, "LENS");
+            guest.expectError(ErrorCode.NOT_PLAYING);
             guest.send(MsgType.CHARACTER_SELECT, "UNKNOWN");
             guest.expectError(ErrorCode.INVALID_CHARACTER);
 
@@ -81,7 +84,15 @@ public final class LobbySelectionTest {
                 check(ArenaMap.FROST.matches(board.tiles()), "Game initializes with the selected map");
                 check(board.players().stream().map(GameBoard.Player::id).toList().equals(List.of(1, 2, 3)),
                         "Game initializes with actual participants");
+                Message itemState = view.receive(MsgType.ITEM_STATE);
+                check(itemState.userId() == view.id() && ItemState.parse(itemState.body()).inventory().isEmpty(),
+                        "Each player receives only their own inventory view");
             }
+            guest.send(MsgType.ITEM_USE, "UNKNOWN");
+            guest.expectError(ErrorCode.INVALID_ITEM);
+            guest.send(MsgType.ITEM_USE, "LENS");
+            check(GameBoard.parseState(guest.receive(MsgType.STATE).body()).players().size() == 3,
+                    "Using an item with no inventory has no side effect");
             host.send(MsgType.MAP_SELECT, "TIDE");
             host.expectError(ErrorCode.ROOM_PLAYING);
             guest.send(MsgType.CHARACTER_SELECT, "MUDSKIPPER");

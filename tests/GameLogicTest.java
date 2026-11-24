@@ -223,9 +223,15 @@ public final class GameLogicTest {
         game.step(List.of(new GameCommand.Input(1, Direction.STOP), new GameCommand.UseItem(1, ItemType.INVISIBILITY)));
         long invisibleTick = game.snapshot().tick();
         check(!game.snapshot().canSee(2, 1) && game.snapshot().canSee(1, 1), "Only the opponent loses sight");
+        check(GameBoard.parseState(game.snapshot().stateBodyFor(2)).players().stream().noneMatch(p -> p.id() == 1),
+                "Opponent does not receive the hidden player's position over the wire");
+        check(GameBoard.parseState(game.snapshot().stateBodyFor(1)).players().stream().anyMatch(p -> p.id() == 1),
+                "Hidden player still receives their own position");
         check(inventory(game, 1, ItemType.INVISIBILITY) == 0, "Invisibility consumed");
         game.step(List.of(new GameCommand.UseItem(2, ItemType.LENS)));
         check(game.snapshot().canSee(2, 1) && inventory(game, 2, ItemType.LENS) == 0, "Lens reveals hidden opponent");
+        check(GameBoard.parseState(game.snapshot().stateBodyFor(2)).players().stream().anyMatch(p -> p.id() == 1),
+                "Lens holder receives the hidden player's position");
         advanceTo(game, invisibleTick + 99);
         check(game.snapshot().playerItems().get(1).invisible(), "Invisibility lasts through its last tick");
         game.step(List.of());

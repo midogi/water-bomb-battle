@@ -2,6 +2,7 @@ package server.net;
 
 import common.model.ArenaMap;
 import common.model.CharacterType;
+import common.model.ItemType;
 import common.protocol.Message;
 import common.protocol.MessageCodec;
 import common.protocol.MsgType;
@@ -69,6 +70,7 @@ public final class ClientHandler implements Runnable{
                 room.startGame(userId);
             }
             case INPUT, BOMB -> currentRoom().submitGameInput(userId, request);
+            case ITEM_USE -> currentRoom().useItem(userId, parseItem(request.body()));
             case CHAT -> {
                 Room room = currentRoom();
                 String text = request.body().strip();
@@ -169,6 +171,14 @@ public final class ClientHandler implements Runnable{
             return ArenaMap.valueOf(body.strip());
         } catch (IllegalArgumentException error) {
             throw new LobbyException(ErrorCode.INVALID_MAP);
+        }
+    }
+
+    private ItemType parseItem(String body) throws LobbyException {
+        try {
+            return ItemType.valueOf(body.strip());
+        } catch (IllegalArgumentException error) {
+            throw new LobbyException(ErrorCode.INVALID_ITEM);
         }
     }
 

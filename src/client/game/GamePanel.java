@@ -136,6 +136,8 @@ public final class GamePanel extends JPanel {
     public void updateState(GameBoard.State state) {
         if (board != null) {
             long now = System.nanoTime();
+            // 투명화가 풀릴 때 마지막으로 보였던 좌표에서 슬쩍 이동해 보이지 않도록 기록을 지운다.
+            poses.keySet().removeIf(id -> state.players().stream().noneMatch(player -> player.id() == id));
             for (GameBoard.Player player : state.players()) {
                 poses.computeIfAbsent(player.id(), id -> new PlayerPose(player)).update(player, now);
             }

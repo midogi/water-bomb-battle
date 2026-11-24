@@ -214,6 +214,8 @@ public final class ClientMain {
                             ? new Message(MsgType.INPUT, roomId, userId, direction) : null;
                 }
                 case "/bomb" -> new Message(MsgType.BOMB, roomId, userId, "");
+                case "/item" -> arg.isEmpty() ? null
+                        : new Message(MsgType.ITEM_USE, roomId, userId, arg.toUpperCase(Locale.ROOT));
                 case "/emoji" -> {
                     int number = Integer.parseInt(arg);
                     yield number >= 0 ? new Message(MsgType.EMOJI, roomId, userId, Integer.toString(number)) : null;
@@ -238,6 +240,7 @@ public final class ClientMain {
                 /start                게임 시작 (방장)
                 /move UP|DOWN|LEFT|RIGHT|STOP
                 /bomb                 물폭탄 설치
+                /item INVISIBILITY|LENS|NEEDLE|DART
                 /emoji 번호           이모티콘
                 /state                STATE 출력 켜기/끄기
                 /help                 도움말

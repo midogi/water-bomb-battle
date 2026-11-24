@@ -44,6 +44,7 @@ ROOM_INFO|3|0|2|1:물방울:false:CRAB,2:파랑:true:TURTLE|FROST
 | START | 없음 | 방장 요청, 전원 캐릭터 선택 및 방장 외 전원 준비 후 시작 |
 | INPUT | UP / DOWN / LEFT / RIGHT / STOP | 키를 누르거나 뗄 때 방향 전달; 좌표 전송 없음 |
 | BOMB | 없음 | 현재 위치에 물폭탄 설치 |
+| ITEM_USE | INVISIBILITY / LENS / NEEDLE / DART | 보유 아이템 사용 요청 |
 | CHAT | 메시지 | 같은 방 채팅 |
 | EMOJI | 이모티콘 번호 | 같은 방 이모티콘 |
 
@@ -59,6 +60,7 @@ ROOM_INFO|3|0|2|1:물방울:false:CRAB,2:파랑:true:TURTLE|FROST
 | ROOM_INFO | 방장ID / userId:닉네임:준비:캐릭터,... / 맵코드 | 참가자, 준비·캐릭터 상태, 선택한 맵 |
 | GAME_INIT | 맵 문자열 / userId:x:y,... | `.` 빈칸, `#` 벽, `B` 상자 |
 | STATE | tick / id:x:y:상태,... / col:row:남은틱,... | 매 틱의 플레이어·폭탄 상태 |
+| ITEM_STATE | col:row:종류,... / 종류:수량,... / 투명화 / 렌즈 | 바닥 아이템과 수신자 본인의 소지 수량·효과 |
 | EVENT | 종류:값... | 폭발, 상자, 아이템, 피격, 탈락 |
 | CHAT | userId:닉네임 / 메시지 | 채팅 중계 |
 | EMOJI | userId:이모티콘번호 | 이모티콘 중계 |
@@ -78,9 +80,12 @@ EVENT 본문:
 EXPLODE:col:row:상:하:좌:우
 BOX_BREAK:col:row:아이템
 ITEM_GET:userId:col:row:종류
+ITEM_USED:userId:종류
 TRAPPED:userId
 DEAD:userId
 ```
+
+`ITEM_STATE`는 수신자의 사용자 ID를 헤더에 담아 경기 시작과 내용이 바뀔 때 보냅니다. 빈 목록은 빈 필드, 시야 효과는 `true` 또는 `false`로 표시합니다. `STATE`는 수신자에게 보이는 플레이어 좌표를 넣습니다. 투명화한 플레이어의 좌표는 본인과 렌즈가 켜진 상대에게 전달합니다. 아이템이 없거나 효과를 적용할 조건이 맞지 않으면 현재 소지 수량을 유지합니다.
 
 ## 서버 기준값
 
@@ -92,4 +97,4 @@ DEAD:userId
 
 ## 기본 코드 범위
 
-서버는 로그인, 로비, 캐릭터·맵 선택, 준비·경기 시작, 이동·물폭탄, 채팅·이모티콘을 처리합니다. 거절 응답의 코드는 `common.protocol.ErrorCode`에서 정의합니다.
+서버는 로그인, 로비, 캐릭터·맵 선택, 준비·경기 시작, 이동·물폭탄, 아이템 사용, 채팅·이모티콘을 처리합니다. 거절 응답의 코드는 `common.protocol.ErrorCode`에서 정의합니다.

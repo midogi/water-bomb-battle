@@ -7,8 +7,11 @@ import client.game.GamePanel;
 import client.game.MatchScreen;
 import client.resource.Avatar;
 import common.model.Direction;
+import common.model.ItemType;
+import common.protocol.ItemState;
 import java.awt.Dimension;
 import java.util.List;
+import java.util.Set;
 import javax.swing.JFrame;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -37,7 +40,7 @@ public class MainFrame extends JFrame implements LoginPanel.LoginListener,
     private String roomTitle;
     private final GamePanel gamePanel = new GamePanel(this::moveRequested, this::bombRequested);
     private int gameRoomId;
-    private final MatchScreen match = new MatchScreen(gamePanel, this::returnToWaitingRoom);
+    private final MatchScreen match = new MatchScreen(gamePanel, this::returnToWaitingRoom, this::itemRequested);
     private LobbySession session;
     private boolean sessionActive;
 
@@ -252,6 +255,19 @@ public class MainFrame extends JFrame implements LoginPanel.LoginListener,
     /** 현재 플레이 중인 방으로만 물풍선 설치 요청을 보낸다. */
     private void bombRequested() {
         if (session != null && gameRoomId != 0) session.placeBomb(gameRoomId);
+    }
+
+    private void itemRequested(ItemType item) {
+        if (session != null && gameRoomId != 0) session.useItem(gameRoomId, item);
+    }
+
+    @Override
+    public void itemStateReceived(int roomId, ItemState state) {
+        if (gameRoomId == 0 || roomId != gameRoomId) return;
+        var ground = state.ground().stream()
+                .map(item -> new GamePanel.ItemMarker(item.col(), item.row(), item.type())).toList();
+        gamePanel.updateItems(ground, Set.of());
+        match.updateInventory(state.inventory(), state.invisible(), state.lensActive());
     }
 
     /** 현재 경기의 이벤트만 게임판에 넘겨 이전 방의 상자가 잘못 사라지지 않게 한다. */
