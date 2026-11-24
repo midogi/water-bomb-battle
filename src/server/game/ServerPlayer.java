@@ -2,7 +2,9 @@ package server.game;
 
 import common.Constants;
 import common.model.Direction;
+import common.model.ItemType;
 import common.model.PlayerState;
+import java.util.EnumMap;
 
 /** x와 y는 캐릭터 판정 사각형의 왼쪽 위 픽셀 좌표다. */
 public final class ServerPlayer {
@@ -10,8 +12,12 @@ public final class ServerPlayer {
     int x;
     int y;
     Direction direction = Direction.STOP;
+    Direction facing = Direction.DOWN;
     PlayerState state = PlayerState.ALIVE;
     long trappedUntil;
+    long invisibleUntil;
+    long lensUntil;
+    final EnumMap<ItemType, Integer> items = new EnumMap<>(ItemType.class);
     boolean connected = true;
 
     public ServerPlayer(int userId, int x, int y) {

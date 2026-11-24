@@ -1,10 +1,13 @@
 package client.game;
 
 import client.resource.GameImages;
+import common.model.ItemType;
 import common.model.PlayerState;
 import java.awt.*;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.function.Consumer;
 import javax.swing.*;
 
 /** 실제 접속과 두 창 프리뷰가 공유하는 경기 화면. 맵 그리기는 GamePanel에 맡긴다. */
@@ -15,12 +18,17 @@ public final class MatchScreen extends JPanel {
     private final JLabel result = new JLabel("", SwingConstants.CENTER);
     private final JPanel members = new JPanel();
     private final Map<Integer, JLabel> statuses = new LinkedHashMap<>();
+    private final Map<ItemType, JButton> itemButtons = new EnumMap<>(ItemType.class);
     private final JButton leave = new JButton("나가기");
     private boolean finished;
     private int myId;
 
     /** 맵 위에는 투명한 결과 배지를, 오른쪽에는 명단과 나가기 버튼을 배치한다. 버튼으로 돌아갈 화면은 호출자가 onLeave로 정한다. */
     public MatchScreen(GamePanel board, Runnable onLeave) {
+        this(board, onLeave, null);
+    }
+
+    public MatchScreen(GamePanel board, Runnable onLeave, Consumer<ItemType> onItem) {
         super(new BorderLayout());
         this.board = board;
         board.setLayout(new GridBagLayout());
@@ -45,7 +53,19 @@ public final class MatchScreen extends JPanel {
         members.setLayout(new BoxLayout(members, BoxLayout.Y_AXIS));
         members.setOpaque(false);
         side.add(members, BorderLayout.CENTER);
-        side.add(leave, BorderLayout.SOUTH);
+        JPanel actions = new JPanel(new GridLayout(0, 1, 0, 3));
+        actions.setOpaque(false);
+        if (onItem != null) {
+            for (ItemType item : ItemType.values()) {
+                JButton button = new JButton();
+                button.setFocusable(false);
+                button.addActionListener(e -> onItem.accept(item));
+                itemButtons.put(item, button);
+                actions.add(button);
+            }
+        }
+        actions.add(leave);
+        side.add(actions, BorderLayout.SOUTH);
         add(side, BorderLayout.EAST);
         leave.addActionListener(e -> {
             leave.setEnabled(false);
@@ -87,6 +107,27 @@ public final class MatchScreen extends JPanel {
         members.revalidate();
         members.repaint();
         board.showBoard(initial, myId, appearances);
+        updateInventory(Map.of(), false, false);
+    }
+
+    public void updateInventory(Map<ItemType, Integer> inventory, boolean invisible, boolean lensActive) {
+        for (var entry : itemButtons.entrySet()) {
+            int count = inventory.getOrDefault(entry.getKey(), 0);
+            String name = switch (entry.getKey()) {
+                case INVISIBILITY -> "투명화";
+                case LENS -> "렌즈";
+                case NEEDLE -> "바늘";
+                case DART -> "다트";
+            };
+            JButton button = entry.getValue();
+            boolean active = switch (entry.getKey()) {
+                case INVISIBILITY -> invisible;
+                case LENS -> lensActive;
+                default -> false;
+            };
+            button.setText(name + " " + count + (active ? " · 적용 중" : ""));
+            button.setEnabled(!finished && count > 0);
+        }
     }
 
     private static String stateName(PlayerState state) {
@@ -117,6 +158,7 @@ public final class MatchScreen extends JPanel {
         boolean won = winner.equals(Integer.toString(myId));
         finished = true;
         board.setEnabled(false);
+        itemButtons.values().forEach(button -> button.setEnabled(false));
         result.setIcon(draw ? null : won ? WIN : LOSE);
         result.setText(draw ? "무승부" : "");
         result.getAccessibleContext().setAccessibleName(draw ? "무승부" : won ? "승리" : "패배");
