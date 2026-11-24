@@ -7,12 +7,14 @@ import java.net.Socket;
 import java.io.IOException;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
-
+import common.protocol.MsgType;
+import java.io.BufferedOutputStream;
 
 
 public final class UserSession{
     private static final int QUEUE_CAPACITY = 256;
     
+    private static final int STATE_SKIP_THRESHOLD = 20;
     private final Socket socket;
     private final DataOutputStream output;
     private final int userId;
@@ -25,8 +27,8 @@ public final class UserSession{
     public UserSession(Socket socket, int userId) throws IOException{
         this.socket = socket;
         this.userId = userId;
-        this.output = new DataOutputStream(socket.getOutputStream());
-    }
+        this.output = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
+        }
 
     public int userId(){ return userId; }
     public String nickname() {return nickname; }
@@ -44,6 +46,9 @@ public final class UserSession{
     public boolean send(Message message) {
         if (closed) {
             return false;
+        }
+        if(message.type()==MsgType.STATE && outbox.size() >= STATE_SKIP_THRESHOLD) {
+            return true;
         }
         if (!outbox.offer(message)){
             close();

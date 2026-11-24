@@ -2,21 +2,20 @@ package server.lobby;
 
 import common.Constants;
 import common.protocol.Message;
+import common.protocol.MsgType;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.StringJoiner;
 import java.util.ArrayList;
-import java.util.List;
-import common.protocol.MsgType;
 import server.game.GameLoop;
 import server.game.GameState;
-
 import server.net.UserSession;
+import common.protocol.ErrorCode;
+
 
 public final class Room{
-    private static final int MOVE_PIXELS_PER_TICK = 4;
     private final int id;
     private final String title;
     private final Map<Integer, UserSession> members = new LinkedHashMap<>();
@@ -24,7 +23,9 @@ public final class Room{
     private int hostId;
     private boolean playing;
     private GameLoop game;
-    
+
+    private static final int MOVE_PIXELS_PER_TICK = 4;
+
     Room(int id, String title, UserSession host){
         this.id = id;
         this.title = title;
@@ -39,31 +40,37 @@ public final class Room{
     //입장
     public synchronized void add(UserSession session) throws LobbyException{
         if ( playing ) {
-            throw new LobbyException("ROOM_PLAYING", "게임 중인 방입니다.");
+            throw new LobbyException(ErrorCode.ROOM_PLAYING);
         }
         if (members.size() >= Constants.MAX_PLAYERS) {
-            throw new LobbyException("ROOM_FULL", "방이 가득 찼습니다.");
+            throw new LobbyException(ErrorCode.ROOM_FULL);
         }
         members.put(session.userId(), session);
         session.setRoomId(id);
     }
     //퇴장
     public synchronized void remove(UserSession session) {
-        if( members.remove(session.userId()) == null){ return; }
-        ready.remove(session.userId());
+        int leaverId = session.userId();
+        if(members.remove(leaverId) == null) {return;}
+        ready.remove(leaverId);
         session.setRoomId(Constants.LOBBY_ROOM_ID);
-        
-        //방장이 나가면 방장 교체( 기준은 들어온 순서 )
-        if(session.userId() == hostId && !members.isEmpty()) {
+
+        if(leaverId == hostId && !members.isEmpty()) {
             hostId = members.keySet().iterator().next();
             ready.remove(hostId);
         }
+
+        if(playing && game != null && game.playerLeft(leaverId)){
+            return;
+        }
+        broadcast(new Message(MsgType.PLAYER_LEFT, id, 0, Integer.toString(leaverId)));
+        broadcast(new Message(MsgType.ROOM_INFO, id, 0, infoBody()));
     }
 
     //준비
     public synchronized void setReady(int userId, boolean value) throws LobbyException{
         if(playing) {
-            throw new LobbyException("ROOM_PLAYING", "게임 중에는 준비 상태를 바꿀 수 없습니다.");
+            throw new LobbyException(ErrorCode.ROOM_PLAYING);
         }
         if(!members.containsKey(userId)) {
             return;
@@ -78,17 +85,17 @@ public final class Room{
     //시작
     public synchronized void checkStart(int userId) throws LobbyException {
         if (userId != hostId) {
-            throw new LobbyException("NOT_HOST", "방장만 시작할 수 있습니다.");
+            throw new LobbyException(ErrorCode.NOT_HOST);
         }
         if(playing){
-            throw new LobbyException("ALREADY_PLAYING", "이미 게임 중 입니다.");
+            throw new LobbyException(ErrorCode.ALREADY_PLAYING);
         }
         if(members.size() < Constants.MIN_PLAYERS) {
-            throw new LobbyException("NOT_ENOUGH_PLAYERS", "최소 인원은 2명입니다.");
+            throw new LobbyException(ErrorCode.NOT_ENOUGH_PLAYERS);
         }
         for( int memberId : members.keySet()) {
             if(memberId != hostId && !ready.contains(memberId)) {
-                throw new LobbyException("NOT_ALL_READY","모두 준비되지 않았습니다.");
+                throw new LobbyException(ErrorCode.NOT_ALL_READY);
             }
         }
     }
@@ -121,9 +128,50 @@ public final class Room{
         ready.clear();
     }
 
-    public synchronized List<Integer> startGame(int userId) throws LobbyException{
+    //게임 시작 : 검사 -> GameState/GameLoop 생성 -> GAME_INIT전송
+    public synchronized void startGame(int userId) throws LobbyException{
         checkStart(userId);
+        GameState state = GameState.arena(id, new ArrayList<>(members.keySet()), MOVE_PIXELS_PER_TICK);
+        GameLoop loop = new GameLoop(state, this::onGameMessage);
+        game = loop;
         playing = true;
-       return new ArrayList<>(members.keySet());
+        loop.start();
+    }
+
+    //게임 입력 (INPUT, BOMB)을 게임루프로 전달, userId는 소켓 세션의 ID
+    public synchronized void submitGameInput(int userId, Message request) throws LobbyException{
+        if(!playing || game == null){
+            throw new LobbyException(ErrorCode.NOT_PLAYING);
+        }
+        try {
+            game.submit(userId, request);
+        } catch (IllegalArgumentException error) {
+            throw new LobbyException(ErrorCode.INVALID_INPUT);
+        }
+    }
+
+    private synchronized void onGameMessage(Message message){
+        broadcast(message);
+            if(message.type() == MsgType.RESULT) {
+                finishGame();
+            }
+    }
+
+    private void finishGame() {
+        if(game != null) {
+            game.close();
+            game = null;
+        }
+        playing = false;
+        ready.clear();
+        broadcast(new Message(MsgType.ROOM_INFO, id, 0, infoBody()));
+    }
+
+    synchronized void close(){
+        if(game != null) {
+            game.close();
+            game = null;
+        }
+         playing = false;
     }
 }

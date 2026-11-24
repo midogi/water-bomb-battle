@@ -1,12 +1,14 @@
 package server.lobby;
 
-public final class LobbyException extends Exception {
-    private final String code;
+import common.protocol.ErrorCode;
 
-    public LobbyException(String code, String message){
-        super(message);
+public final class LobbyException extends Exception{
+    private final ErrorCode code;
+
+    public LobbyException(ErrorCode code){
+        super(code.message());
         this.code = code;
     }
 
-    public String code() { return code; }
+    public ErrorCode code() {return code; }
 }
