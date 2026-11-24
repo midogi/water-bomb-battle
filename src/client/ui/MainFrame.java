@@ -4,6 +4,7 @@ import java.awt.CardLayout;
 import client.game.GameBoard;
 import client.game.GamePanel;
 import client.resource.Avatar;
+import common.Constants;
 import common.model.Direction;
 import java.awt.Dimension;
 import java.util.List;
@@ -132,7 +133,11 @@ public class MainFrame extends JFrame implements LoginPanel.LoginListener,
 
     @Override
     public void chatReceived(int roomId, String line) {
-        if (currentRoom != null && currentRoom.roomId() == roomId && gameRoomId == 0) {
+        if (roomId == Constatns.LOBBY_ROOM_ID) {
+            lobbyPanel.appendChat(line);
+            return;
+        }
+        if(currentRoom != null && currentRoom.roomId() == roomId && gameRoomId == 0) {
             waitingRoom.appendChat(line);
         }
     }
@@ -175,5 +180,10 @@ public class MainFrame extends JFrame implements LoginPanel.LoginListener,
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> new MainFrame().setVisible(true));
+    }
+
+    @Override
+    public void lobbyChatRequested(String text) {
+        session.sendChat(Constants.LOBBY_ROOM_ID, text);
     }
 }

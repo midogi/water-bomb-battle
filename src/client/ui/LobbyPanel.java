@@ -4,11 +4,13 @@ import java.awt.BorderLayout;
 import java.awt.Font;
 import java.util.List;
 import javax.swing.*;
+import javax.swing.border.Border;
 
 public class LobbyPanel extends CoastPanel {
     interface RoomListener {
         void createRequested(String title);
         void joinRequested(int roomId);
+        void lobbyChatRequested(String text);
     }
 
     private final JLabel nicknameLabel = new JLabel();
@@ -17,6 +19,8 @@ public class LobbyPanel extends CoastPanel {
     private final JList<RoomSummary> roomList = new JList<>(roomModel);
     private final JButton createButton = new JButton("방 만들기");
     private final JButton joinButton = new JButton("입장");
+    private final JTextArea chatLog = new JTextArea();
+    private final JTextField chatInput = new JTextField();
 
     LobbyPanel(RoomListener listener) {
         setLayout(new BorderLayout(0, 12));
@@ -36,7 +40,33 @@ public class LobbyPanel extends CoastPanel {
         scroll.setOpaque(false);
         scroll.getViewport().setOpaque(false);
         scroll.setBorder(BorderFactory.createTitledBorder("방 목록"));
-        add(scroll, BorderLayout.CENTER);
+        chatLog.setEditable(false);
+        chatLog.setLineWrap(true);
+        JScrollPane chatScroll = new JScrollPane(chatLog);
+        chatScroll.setBorder(BorderFactory.createTitledBorder("로비 채팅"));
+        JButton send = new JButton("전송");
+        JPanel composer = new JPanel(new BorderLayout(6, 0));
+        composer.setOpaque(false);
+        composer.add(chatInput, BorderLayout.CENTER);
+        composer.add(send, BorderLayout.EAST);
+        JPanel chatBox = new JPanel(new BorderLayout());
+        chatBox.setOpaque(false);
+        chatBox.add(chatScroll, BorderLayout.CENTER);
+        chatBox.add(composer, BorderLayout.SOUTH);
+        
+        JPanel center = new JPanel(new java.awt.GridLayout(2, 1, 0, 8));
+        center.setOpaque(false);
+        center.add(scroll);
+        center.add(chatBox);
+        add(center, BorderLayout.CENTER);
+
+        chatInput.addActionListener(e-> send.doClick());
+        send.addActionListener(e-> {
+            String text = chatInput.getText().strip();
+            if(text.isEmpty()) return;
+            chatInput.setText("");
+            listener.lobbyChatRequested(text);
+        });
 
         JPanel buttons = new JPanel();
         buttons.setOpaque(false);
@@ -100,5 +130,15 @@ public class LobbyPanel extends CoastPanel {
         }
         roomStatusLabel.setText(rooms.isEmpty() ? "현재 개설된 방이 없습니다."
                 : "현재 개설된 방: " + rooms.size() + "개");
+    }
+
+    void appendChat(String line) {
+        chatLog.append(line + "\n");
+        chatLog.setCaretPosition(chatLog.getDocument().getLength());
+    }
+
+    void clearChat() {
+        chatLog.setText("");
+        chatInput.setText("");
     }
 }
