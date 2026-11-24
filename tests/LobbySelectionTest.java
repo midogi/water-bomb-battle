@@ -31,7 +31,7 @@ public final class LobbySelectionTest {
             host.send(MsgType.ROOM_CREATE, "Selection test");
             Message created = host.receive(MsgType.ROOM_INFO);
             int roomId = created.roomId();
-            check(created.body().equals("1|1:host:true:NONE|TIDE"), "New room uses the default map");
+            check(created.body().equals("1|1:host:true:NONE|RANDOM"), "New room uses the default map");
             guest.send(MsgType.ROOM_JOIN, Integer.toString(roomId));
             sharedRoomInfo(host, guest);
             third.send(MsgType.ROOM_JOIN, Integer.toString(roomId));

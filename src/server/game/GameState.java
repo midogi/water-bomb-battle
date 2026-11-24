@@ -367,11 +367,7 @@ public final class GameState {
                 player.state = PlayerState.ALIVE;
                 player.trappedUntil = 0;
             }
-            case DART -> {
-                if (!triggerBombAhead(player)) {
-                    return;
-                }
-            }
+            case DART -> fireDart(player, messages);
         }
         if (count == 1) {
             player.items.remove(item);
@@ -381,26 +377,28 @@ public final class GameState {
         messages.add(message(MsgType.EVENT, "ITEM_USED:" + player.userId() + ":" + item));
     }
 
-    private boolean triggerBombAhead(ServerPlayer player) {
+    /** 발사하면 한 개를 사용한다. 첫 장애물이나 물폭탄에서 멈추며 빈 길에서는 사거리까지 간다. */
+    private void fireDart(ServerPlayer player, List<Message> messages) {
         GameMap.Cell origin = centerCell(player);
         int dx = player.facing == Direction.LEFT ? -1 : player.facing == Direction.RIGHT ? 1 : 0;
         int dy = player.facing == Direction.UP ? -1 : player.facing == Direction.DOWN ? 1 : 0;
+        GameMap.Cell end = origin;
+        String result = "MISS";
         for (int distance = 1; distance <= DART_RANGE; distance++) {
-            GameMap.Cell cell = new GameMap.Cell(origin.col() + dx * distance, origin.row() + dy * distance);
-            if (map.tile(cell.col(), cell.row()) != '.') {
+            end = new GameMap.Cell(origin.col() + dx * distance, origin.row() + dy * distance);
+            if (map.tile(end.col(), end.row()) != '.') {
+                result = "BLOCK";
                 break;
             }
-            Bomb bomb = bombs.get(cell);
+            Bomb bomb = bombs.get(end);
             if (bomb != null) {
-                if (bomb.explodeAtTick() <= tick) {
-                    return false;
-                }
-                // 터지는 틱만 앞당기면 폭발과 연쇄 판정은 원래 코드가 처리한다.
-                bombs.put(cell, new Bomb(bomb.ownerId(), bomb.col(), bomb.row(), bomb.range(), tick));
-                return true;
+                bombs.put(end, new Bomb(bomb.ownerId(), bomb.col(), bomb.row(), bomb.range(), tick));
+                result = "BOMB";
+                break;
             }
         }
-        return false;
+        messages.add(message(MsgType.EVENT, "DART_SHOT:" + player.userId() + ":" + end.col() + ":"
+                + end.row() + ":" + result + ":" + player.facing.name()));
     }
 
     private static GameMap.Cell centerCell(ServerPlayer player) {

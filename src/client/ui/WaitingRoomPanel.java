@@ -7,7 +7,6 @@ import java.util.EnumMap;
 import java.util.function.BiConsumer;
 import java.util.function.IntConsumer;
 import javax.swing.*;
-import javax.swing.text.*;
 
 final class WaitingRoomPanel extends CoastPanel {
     interface ReadyListener {
@@ -24,7 +23,7 @@ final class WaitingRoomPanel extends CoastPanel {
     private final JButton readyButton = new JButton("준비");
     private final JButton startButton = new JButton("게임 시작");
     private final JButton leaveButton = new JButton("방 나가기");
-    private final JButton sendButton = new JButton("전송");
+    private ChatPane roomChat;
     private boolean leaving;
     private RoomInfo room;
     private RoomInfo.Member me;
@@ -34,11 +33,11 @@ final class WaitingRoomPanel extends CoastPanel {
     private Boolean awaitingReady;
     private boolean awaitingStart;
 
-    private static final Color INK = new Color(25, 61, 71);
-    private static final Color CREAM = new Color(255, 249, 230);
+    static final Color INK = new Color(25, 61, 71);
+    static final Color CREAM = new Color(255, 249, 230);
     private static final Color GOLD = new Color(255, 207, 67);
     /** 캐릭터를 고르지 않은 참가자와 선택 버튼에 사용할 물음표 그림을 지정한 크기로 만든다. */
-    private static Icon unknownIcon(int size) {
+    static Icon unknownIcon(int size) {
         java.awt.image.BufferedImage image = new java.awt.image.BufferedImage(size, size,
                 java.awt.image.BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = image.createGraphics();
@@ -59,9 +58,6 @@ final class WaitingRoomPanel extends CoastPanel {
         return new ImageIcon(image);
     }
     private static final Icon UNKNOWN = unknownIcon(48);
-    private final JTextPane chatLog = new JTextPane();
-    private final JButton emojiButton = new JButton("이모티콘");
-    private final JTextField chatInput = new JTextField();
 
     /** 참가자, 선택, 채팅, 맵 영역을 배치한다. 소켓 처리는 생성할 때 받은 함수에 맡겨 미리보기에서도 같은 화면을 쓴다. */
     WaitingRoomPanel(ReadyListener ready, IntConsumer start, BiConsumer<Integer, Avatar> select,
@@ -123,35 +119,12 @@ final class WaitingRoomPanel extends CoastPanel {
 
     /** 채팅 기록과 입력칸을 만든다. Enter와 전송 버튼이 같은 검사를 거쳐 입력한 메시지를 보낸다. */
     private JPanel createChatSection(BiConsumer<Integer, String> chat, BiConsumer<Integer, RoomEmoji> sendEmoji) {
-        chatLog.setEditable(false);
-        chatLog.setBackground(CREAM);
-        chatLog.getAccessibleContext().setAccessibleName("방 채팅 기록");
-        chatInput.getAccessibleContext().setAccessibleName("보낼 메시지");
-        JPanel composer = new JPanel(new BorderLayout(3, 0));
-        // 선택 메뉴만 열기 때문에 작성 중인 채팅은 그대로 남는다.
-        JPopupMenu picker = new JPopupMenu();
-        for (RoomEmoji emoji : RoomEmoji.values()) {
-            JMenuItem item = new JMenuItem(emoji.label, emoji.icon);
-            item.addActionListener(e -> {
-                if (room != null && !leaving) sendEmoji.accept(room.roomId(), emoji);
-            });
-            picker.add(item);
-        }
-        emojiButton.addActionListener(e -> picker.show(emojiButton, 0, emojiButton.getHeight()));
-        composer.add(emojiButton, BorderLayout.WEST);
-        composer.add(chatInput, BorderLayout.CENTER);
-        composer.add(sendButton, BorderLayout.EAST);
-        chatInput.addActionListener(e -> sendButton.doClick());
-        sendButton.addActionListener(e -> {
-            String message = chatInput.getText().strip();
-            if (room == null || message.isEmpty()) return;
-            chatInput.setText("");
-            // 실제 채팅 기록에는 수신한 메시지만 추가해 내가 보낸 말이 두 번 표시되지 않게 한다.
-            chat.accept(room.roomId(), message);
+        roomChat = new ChatPane("방 채팅", text -> {
+            if (room != null && !leaving) chat.accept(room.roomId(), text);
+        }, selected -> {
+            if (room != null && !leaving) sendEmoji.accept(room.roomId(), selected);
         });
-        JPanel chatBox = section("방 채팅", new JScrollPane(chatLog));
-        chatBox.add(composer, BorderLayout.SOUTH);
-        return chatBox;
+        return section("방 채팅", roomChat);
     }
 
     /** 두 창 미리보기에서 같은 선택을 표시하고 방장에게만 변경 동작을 연결한다. */
@@ -161,7 +134,7 @@ final class WaitingRoomPanel extends CoastPanel {
 
     /** 대기실에 축소 맵과 역할별 동작 버튼을 만든다. 준비·시작을 누르면 등록한 함수에 요청을 전달한다. */
     private JPanel createMapSection(ReadyListener ready, IntConsumer start) {
-        JPanel map = section("맵 미리보기", mapPreview);
+        JPanel map = section("맵 선택", mapPreview);
         actionPanel.add(readyButton, "ready");
         actionPanel.add(startButton, "start");
         startButton.setBackground(GOLD);
@@ -209,8 +182,7 @@ final class WaitingRoomPanel extends CoastPanel {
 
     /** 새 방에 들어가거나 연결이 끝나면 이전 방의 대화와 입력 중이던 문장을 지운다. */
     private void clearChat() {
-        chatLog.setText("");
-        chatInput.setText("");
+        roomChat.clear();
     }
 
     /** MainFrame이 ROOM_LIST를 받았을 때 단순 목록 갱신과 내가 요청한 퇴장을 구분하는 데 쓴다. */
@@ -227,29 +199,12 @@ final class WaitingRoomPanel extends CoastPanel {
         requestFinished();
     }
 
-    /** 같은 방에서 받은 대화 한 줄을 추가하고 가장 최근 메시지가 보이도록 스크롤 위치를 옮긴다. */
     void appendChat(String message) {
-        appendPart(message + "\n", null);
-        chatLog.setCaretPosition(chatLog.getDocument().getLength());
+        roomChat.appendChat(message);
     }
 
-    /** 발신자, 그림, 짧은 문구를 같은 채팅 기록에 차례로 추가한다. */
     void appendEmoji(String nickname, RoomEmoji emoji) {
-        appendPart(nickname + "  ·  ", null);
-        SimpleAttributeSet picture = new SimpleAttributeSet();
-        StyleConstants.setIcon(picture, emoji.icon);
-        appendPart(" ", picture);
-        appendChat(" " + emoji.label);
-    }
-
-    /** 기존 기록 끝에 일반 글자나 아이콘을 삽입한다. 닉네임과 채팅은 일반 텍스트로 유지한다. */
-    private void appendPart(String text, AttributeSet style) {
-        StyledDocument log = chatLog.getStyledDocument();
-        try {
-            log.insertString(log.getLength(), text, style);
-        } catch (BadLocationException invalidOffset) {
-            throw new IllegalStateException("채팅 기록을 추가할 위치가 잘못되었습니다.", invalidOffset);
-        }
+        roomChat.appendEmoji(nickname, emoji);
     }
 
     /** 실제 창은 ROOM_INFO를 받을 때, 미리보기는 참가자 상태가 바뀔 때 호출한다. 같은 방 정보라도 내 번호에 따라 버튼이 달라진다. */
@@ -343,9 +298,7 @@ final class WaitingRoomPanel extends CoastPanel {
     /** 선택·준비 상태가 바뀔 때 호출한다. 남이 사용 중인 캐릭터를 막고 방장에게는 시작, 일반 참가자에게는 준비 버튼을 보여 준다. */
     private void updateButtons() {
         boolean inRoom = me != null && !leaving;
-        chatInput.setEnabled(inRoom);
-        emojiButton.setEnabled(inRoom);
-        sendButton.setEnabled(inRoom);
+        roomChat.setInputEnabled(inRoom);
         boolean idle = inRoom && awaitingAvatar == null && awaitingReady == null && !awaitingStart;
         leaveButton.setEnabled(inRoom);
         for (Avatar avatar : choices.keySet()) {

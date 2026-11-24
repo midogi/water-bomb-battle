@@ -20,6 +20,16 @@ public final class UserSession{
     private final int userId;
     private final BlockingQueue<Message> outbox = new LinkedBlockingQueue<>(QUEUE_CAPACITY);
     private volatile String nickname;
+    private volatile boolean lobbyChatReady;
+
+    // 로그인 응답이 송신 큐에 먼저 들어가야 클라이언트가 첫 메시지를 로그인 결과로 읽을 수 있다.
+    private volatile boolean watchesLobby;
+
+    void watchLobby() { watchesLobby = true; }
+    boolean watchesLobby() { return watchesLobby && acceptsLobbyChat(); }
+
+    void enableLobbyChat() { lobbyChatReady = true; }
+    boolean acceptsLobbyChat() { return lobbyChatReady && roomId == common.Constants.LOBBY_ROOM_ID; }
     private volatile int roomId;
     private volatile boolean closed;
     private Thread writer;

@@ -32,6 +32,10 @@ record WaterBlast(int col, int row, int up, int down, int left, int right, long 
         }
     }
 
+    WaterBlast startAt(long time) {
+        return new WaterBlast(col, row, up, down, left, right, time);
+    }
+
     /** GamePanel의 애니메이션 타이머가 호출한다. 효과를 등록한 뒤 360ms가 지나면 화면에서 제거한다. */
     boolean expired(long now) {
         return now - started >= DURATION;
@@ -39,6 +43,7 @@ record WaterBlast(int col, int row, int up, int down, int left, int right, long 
 
     /** 물줄기 끝을 마지막으로 맞은 칸의 가운데에 두면 둥근 끝부분도 벽 너머로 넘어가지 않는다. */
     void draw(Graphics2D graphics, int tile, long now) {
+        if (now < started || expired(now)) return;
         Graphics2D g = (Graphics2D) graphics.create();
         try {
             int x = col * tile + tile / 2;

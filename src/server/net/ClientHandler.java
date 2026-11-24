@@ -46,8 +46,9 @@ public final class ClientHandler implements Runnable{
                 System.err.println("Client" + userId + " disconnected" + error.getMessage());
             } finally{
                 if (session != null) {
-                    leaveRoom();
                     registry.remove(session);
+                    leaveRoom();
+                    if (session.isLoggedIn()) registry.publishLobby(rooms);
                     session.close();
                 }
             }
@@ -55,41 +56,63 @@ public final class ClientHandler implements Runnable{
 
     private void handleLobby(Message request) throws LobbyException{
         switch(request.type()) {
+            case LOBBY_WATCH -> {
+                session.watchLobby();
+                registry.publishLobby(rooms);
+            }
             case ROOM_LIST -> reply(MsgType.ROOM_LIST, rooms.listBody());
-            case ROOM_CREATE -> rooms.create(request.body(), session).broadcastInfo();
-            case ROOM_JOIN -> rooms.join(parseRoomId(request.body()), session).broadcastInfo();
+            case ROOM_CREATE -> {
+                rooms.create(request.body(), session).broadcastInfo();
+                registry.publishLobby(rooms);
+            }
+            case ROOM_JOIN -> {
+                rooms.join(parseRoomId(request.body()), session).broadcastInfo();
+                registry.publishLobby(rooms);
+            }
             case ROOM_LEAVE -> {
                 leaveRoom();
                 reply(MsgType.ROOM_LIST, rooms.listBody());
+                registry.publishLobby(rooms);
             }
             case CHARACTER_SELECT -> currentRoom().selectCharacter(userId, parseCharacter(request.body()));
             case MAP_SELECT -> currentRoom().selectMap(userId, parseMap(request.body()));
             case READY -> currentRoom().setReady(userId, parseReady(request.body()));
             case START -> {
                 Room room = currentRoom();
-                room.startGame(userId);
+                room.startGame(userId, () -> registry.publishLobby(rooms));
+                registry.publishLobby(rooms);
             }
             case INPUT, BOMB -> currentRoom().submitGameInput(userId, request);
             case ITEM_USE -> currentRoom().useItem(userId, parseItem(request.body()));
-            case CHAT -> {
-                Room room = currentRoom();
+            case CHAT, LOBBY_CHAT -> {
                 String text = request.body().strip();
-                if(text.isEmpty()) {
-                    throw new LobbyException(ErrorCode.EMPTY_CHAT);
-                }
-                if(text.length() > MAX_CHAT_LENGTH) {
-                    throw new LobbyException(ErrorCode.CHAT_TOO_LONG);
-                }
-                room.broadcast(new Message(MsgType.CHAT, room.id(), 0, userId + ":" + session.nickname() + "|" + text));
+                if (text.isEmpty()) throw new LobbyException(ErrorCode.EMPTY_CHAT);
+                if (text.length() > MAX_CHAT_LENGTH) throw new LobbyException(ErrorCode.CHAT_TOO_LONG);
+                relayChat(request.type(), userId + ":" + session.nickname() + "|" + text);
             }
-                case EMOJI -> {
-                    Room room = currentRoom();
-                    int emoji = parseEmoji(request.body());
-                    room.broadcast(new Message(MsgType.EMOJI, room.id(), 0, userId + ":" + emoji));
-                }
+            case EMOJI, LOBBY_EMOJI -> {
+                int emoji = parseEmoji(request.body());
+                // 로비에는 방 명단이 없으므로 서버가 확인한 발신자의 닉네임도 전달한다.
+                String body = userId + ":" + emoji;
+                if (request.type() == MsgType.LOBBY_EMOJI) body += ":" + session.nickname();
+                relayChat(request.type(), body);
+            }
                 default -> throw new LobbyException(ErrorCode.INVALID_REQUEST);
             }
         }
+
+    /** 요청 종류와 실제 소속을 함께 확인해 방 대화와 로비 대화가 섞이지 않게 한다. */
+    private void relayChat(MsgType type, String body) throws LobbyException {
+        if (type == MsgType.LOBBY_CHAT || type == MsgType.LOBBY_EMOJI) {
+            if (session.roomId() != common.Constants.LOBBY_ROOM_ID) {
+                throw new LobbyException(ErrorCode.INVALID_REQUEST);
+            }
+            registry.broadcastLobby(new Message(type, common.Constants.LOBBY_ROOM_ID, 0, body));
+        } else {
+            Room room = currentRoom();
+            room.broadcast(new Message(type, room.id(), 0, body));
+        }
+    }
 
     private int parseRoomId(String body) throws LobbyException{
         try{
@@ -121,6 +144,8 @@ public final class ClientHandler implements Runnable{
                 return;
             }
             reply(MsgType.LOGIN_OK, Integer.toString(userId));
+            session.enableLobbyChat();
+            registry.publishLobby(rooms);
         } else if( !session.isLoggedIn()) {
             replyError(ErrorCode.NOT_LOGGED_IN);
         } else {
@@ -168,7 +193,7 @@ public final class ClientHandler implements Runnable{
 
     private ArenaMap parseMap(String body) throws LobbyException {
         try {
-            return ArenaMap.valueOf(body.strip());
+            return ArenaMap.fromSelection(body.strip());
         } catch (IllegalArgumentException error) {
             throw new LobbyException(ErrorCode.INVALID_MAP);
         }

@@ -34,17 +34,20 @@ ROOM_INFO|3|0|2|1:물방울:false:CRAB,2:파랑:true:TURTLE|FROST
 | TYPE | 본문 | 의미 |
 |---|---|---|
 | LOGIN | 닉네임 | 첫 메시지 |
+| LOBBY_WATCH | 없음 | 로그인 후 로비 갱신 구독. 방에서 돌아와도 같은 연결의 구독 유지 |
 | ROOM_LIST | 없음 | 방 목록 요청 |
 | ROOM_CREATE | 방 제목 | 방 생성 후 방장으로 입장 |
 | ROOM_JOIN | 입장할 roomId | 방 입장 |
 | ROOM_LEAVE | 없음 | 방 퇴장; 게임 중이면 탈락 |
 | CHARACTER_SELECT | NONE / MUDSKIPPER / CRAB / PLOVER / TURTLE | 캐릭터 선택 또는 해제 |
-| MAP_SELECT | 맵 코드 | 방장이 대기 중에 맵 선택 |
+| MAP_SELECT | RANDOM 또는 맵 코드 | 방장이 대기 중에 맵 선택 |
 | READY | true / false | 준비 상태 |
 | START | 없음 | 방장 요청, 전원 캐릭터 선택 및 방장 외 전원 준비 후 시작 |
 | INPUT | UP / DOWN / LEFT / RIGHT / STOP | 키를 누르거나 뗄 때 방향 전달; 좌표 전송 없음 |
 | BOMB | 없음 | 현재 위치에 물폭탄 설치 |
 | ITEM_USE | INVISIBILITY / LENS / NEEDLE / DART | 보유 아이템 사용 요청 |
+| LOBBY_CHAT | 메시지 | 로비 채팅 (방 번호 0) |
+| LOBBY_EMOJI | 이모티콘 번호 | 로비 이모티콘 (방 번호 0) |
 | CHAT | 메시지 | 같은 방 채팅 |
 | EMOJI | 이모티콘 번호 | 같은 방 이모티콘 |
 
@@ -56,12 +59,15 @@ ROOM_INFO|3|0|2|1:물방울:false:CRAB,2:파랑:true:TURTLE|FROST
 |---|---|---|
 | LOGIN_OK | userId | ID 배정 |
 | ERROR | 코드:메시지 | 요청 거절 |
+| LOBBY_UPDATE | 닉네임,... / 방 목록 | 로비에 있는 구독자에게 현재 로비 명단과 ROOM_LIST 형식의 전체 목록 전송. 비어 있는 목록은 빈 필드 |
 | ROOM_LIST | roomId:제목:인원:상태,... | 상태 WAIT / PLAYING |
 | ROOM_INFO | 방장ID / userId:닉네임:준비:캐릭터,... / 맵코드 | 참가자, 준비·캐릭터 상태, 선택한 맵 |
 | GAME_INIT | 맵 문자열 / userId:x:y,... | `.` 빈칸, `#` 벽, `B` 상자 |
 | STATE | tick / id:x:y:상태,... / col:row:남은틱,... | 매 틱의 플레이어·폭탄 상태 |
 | ITEM_STATE | col:row:종류,... / 종류:수량,... / 투명화 / 렌즈 | 바닥 아이템과 수신자 본인의 소지 수량·효과 |
 | EVENT | 종류:값... | 폭발, 상자, 아이템, 피격, 탈락 |
+| LOBBY_CHAT | userId:닉네임 / 메시지 | 로비에 있는 세션에만 중계 |
+| LOBBY_EMOJI | userId:이모티콘번호:닉네임 | 로비에 있는 세션에만 중계 |
 | CHAT | userId:닉네임 / 메시지 | 채팅 중계 |
 | EMOJI | userId:이모티콘번호 | 이모티콘 중계 |
 | PLAYER_LEFT | userId | 접속 종료·퇴장 |
@@ -81,6 +87,7 @@ EXPLODE:col:row:상:하:좌:우
 BOX_BREAK:col:row:아이템
 ITEM_GET:userId:col:row:종류
 ITEM_USED:userId:종류
+DART_SHOT:userId:도착col:도착row:결과(BOMB/BLOCK/MISS):방향
 TRAPPED:userId
 DEAD:userId
 ```
@@ -93,6 +100,7 @@ DEAD:userId
 위치는 픽셀 정수 `(x, y)`, 맵은 타일 `(col, row)`를 사용합니다.
 폭탄은 플레이어 중심 타일에 설치하고 60틱 후 폭발하며, 기본 위력 1칸·설치 개수 1개입니다.
 물방울에 갇힌 플레이어는 움직일 수 있는 다른 플레이어와 판정 사각형이 겹치면 그 틱에 즉시 탈락합니다. 접촉이 없으면 갇힌 뒤 100틱 후 탈락합니다. 두 경우 모두 `DEAD:userId`를 보냅니다. 같은 틱에 마지막 생존자들이 모두 탈락하면 무승부입니다.
+새 방의 맵 선택값은 RANDOM이다. 서버는 매 경기 시작 시 실제 맵을 같은 확률로 하나 뽑는다. 방장이 특정 맵을 선택하면 해당 배치를 사용한다.
 맵 전체는 GAME_INIT으로 한 번 보내고, 이후 변화는 EVENT로 전달합니다.
 
 ## 기본 코드 범위
