@@ -11,6 +11,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Game logic tests failed.' }
     & java -ea -cp out tests.LobbySelectionTest
     if ($LASTEXITCODE -ne 0) { throw 'Lobby selection tests failed.' }
+    & java -ea -cp out tests.ChatIsolationTest
+    if ($LASTEXITCODE -ne 0) { throw 'Chat isolation tests failed.' }
 } finally {
     Pop-Location
 }
