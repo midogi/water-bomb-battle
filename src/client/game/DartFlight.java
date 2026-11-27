@@ -1,21 +1,25 @@
 package client.game;
 
 import common.Constants;
+import common.model.Direction;
 import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Graphics2D;
 
 /** 날아가는 그림만 잠깐 재생한다. 명중 여부와 물폭탄의 폭발 시각은 서버가 정한다. */
-record DartFlight(int fromX, int fromY, int col, int row, int targetX, int targetY, End end, long start, long impact) {
+record DartFlight(int fromX, int fromY, int targetX, int targetY, End end, long start, long impact) {
     enum End { BOMB, BLOCK, MISS }
     private static final int TILE = Constants.TILE_SIZE;
     private static final long FLASH = 65_000_000L;
 
-    static DartFlight from(GameBoard.Player shooter, int col, int row, End end, common.model.Direction direction, long now) {
+    static DartFlight from(GameBoard.Player shooter, int col, int row, End end, Direction direction, long now) {
         int x = shooter.x() + TILE / 2;
         int y = shooter.y() + TILE / 2;
         int targetX = col * TILE + TILE / 2;
         int targetY = row * TILE + TILE / 2;
+        // 서버가 발사 방향으로 검사한 타일의 중심선을 따라간다.
+        if (direction == Direction.LEFT || direction == Direction.RIGHT) y = targetY;
+        else x = targetX;
         // 장애물 한가운데로 들어가지 않고 날아온 쪽 표면에서 부딪힌다.
         if (end == End.BLOCK) {
             switch (direction) {
@@ -27,8 +31,9 @@ record DartFlight(int fromX, int fromY, int col, int row, int targetX, int targe
             }
         }
         double tiles = Math.hypot(targetX - x, targetY - y) / TILE;
-        long duration = (long) ((70 + 20 * Math.min(5, tiles)) * 1_000_000);
-        return new DartFlight(x, y, col, row, targetX, targetY, end, now, now + duration);
+        // 명중한 물폭탄은 이미 터졌으므로 발사 궤적과 명중 표시를 같은 프레임에 그린다.
+        long duration = end == End.BOMB ? 0L : (long) ((70 + 20 * Math.min(5, tiles)) * 1_000_000);
+        return new DartFlight(x, y, targetX, targetY, end, now, now + duration);
     }
 
     boolean expired(long now) {
@@ -54,6 +59,7 @@ record DartFlight(int fromX, int fromY, int col, int row, int targetX, int targe
                                 targetX + (int)(cx * r), targetY + (int)(cy * r));
                     }
                 } else {
+                    g.drawLine(fromX, fromY, targetX, targetY);
                     g.drawOval(targetX - r, targetY - r, 2 * r, 2 * r);
                 }
                 return;

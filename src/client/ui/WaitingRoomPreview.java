@@ -151,7 +151,8 @@ public final class WaitingRoomPreview {
             return;
         }
         List<Integer> participantIds = room.members().stream().map(RoomInfo.Member::id).toList();
-        GameState state = GameState.arena(ROOM_ID, common.model.ArenaMap.forMatch(room.map()), participantIds, 4);
+        GameState state = GameState.arena(ROOM_ID, common.model.ArenaMap.forMatch(room.map()),
+                participantIds, Constants.DEFAULT_MOVE_PIXELS_PER_TICK);
         loop = new GameLoop(state, message -> { });
         GameLoop round = loop;
         GameBoard board = GameBoard.parse(state.initialMessage().body());
@@ -170,9 +171,10 @@ public final class WaitingRoomPreview {
         timer = new Timer(Constants.TICK_MILLIS, e -> {
             for (Message message : loop.advanceOneTick()) {
                 if (message.type() == MsgType.STATE) {
-                    var frameState = GameBoard.parseState(message.body());
-                    views.values().forEach(view -> view.match.updateState(frameState));
-                    updateItems(round.snapshot());
+                    var snapshot = round.snapshot();
+                    updateItems(snapshot);
+                    views.forEach((playerId, view) -> view.match.updateState(
+                            GameBoard.parseState(snapshot.stateBodyFor(playerId))));
                 } else if (message.type() == MsgType.EVENT) {
                     views.values().forEach(view -> view.game.applyMapEvent(message.body()));
                 } else if (message.type() == MsgType.PLAYER_LEFT) {

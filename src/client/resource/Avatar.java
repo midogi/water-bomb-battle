@@ -1,5 +1,6 @@
 package client.resource;
 
+import common.Constants;
 import java.awt.image.BufferedImage;
 import java.awt.Color;
 
@@ -12,15 +13,11 @@ public enum Avatar {
     PLOVER("물떼새", "plover.png", new Color(255, 217, 95)),
     TURTLE("거북이", "turtle.png", new Color(138, 224, 154));
 
-    /** 선택 버튼의 도움말. 밸런스 시안이며 실제 설치 제한·폭발 길이·이동 판정은 서버가 결정한다. */
+    /** 현재 캐릭터별 능력치는 없어서 서버와 같은 공통값을 보여 준다. */
     public String statHint() {
-        return switch (this) {
-            case NONE -> label;
-            case MUDSKIPPER -> "기본 능력치안 · 물폭탄 3개 · 물줄기 3칸 · 속도 5px/틱";
-            case CRAB -> "기본 능력치안 · 물폭탄 4개 · 물줄기 3칸 · 속도 4px/틱";
-            case PLOVER -> "기본 능력치안 · 물폭탄 2개 · 물줄기 3칸 · 속도 6px/틱";
-            case TURTLE -> "기본 능력치안 · 물폭탄 3개 · 물줄기 4칸 · 속도 4px/틱";
-        };
+        if (this == NONE) return label;
+        return "공통 능력치 · 물폭탄 " + Constants.DEFAULT_BOMB_LIMIT + "개 · 물줄기 방향당 "
+                + Constants.DEFAULT_BOMB_RANGE + "칸 · 속도 " + Constants.DEFAULT_MOVE_PIXELS_PER_TICK + "px/틱";
     }
 
     public final String label;

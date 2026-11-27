@@ -2,6 +2,8 @@ package tests;
 
 import client.game.GameBoard;
 import common.model.ArenaMap;
+import common.model.Direction;
+import common.model.PlayerState;
 import common.protocol.ErrorCode;
 import common.protocol.ItemState;
 import common.protocol.Message;
@@ -93,10 +95,23 @@ public final class LobbySelectionTest {
             guest.send(MsgType.ITEM_USE, "LENS");
             check(GameBoard.parseState(guest.receive(MsgType.STATE).body()).players().size() == 3,
                     "Using an item with no inventory has no side effect");
+            host.send(MsgType.INPUT, "UP");
+            GameBoard.Player hostView = guest.receiveFacing(host.id(), Direction.UP);
+            check(hostView.x() == 40 && hostView.y() == 40, "Guest sees the host turn while blocked by the wall");
             host.send(MsgType.MAP_SELECT, "TIDE");
             host.expectError(ErrorCode.ROOM_PLAYING);
             guest.send(MsgType.CHARACTER_SELECT, "MUDSKIPPER");
             guest.expectError(ErrorCode.ROOM_PLAYING);
+
+            host.send(MsgType.BOMB, "");
+            for (Peer view : List.of(host, guest, third)) {
+                check(view.receive(MsgType.EVENT).body().startsWith("EXPLODE:1:1:"), "Explosion reaches every player");
+                check(view.receive(MsgType.EVENT).body().equals("TRAPPED:1"), "The host is trapped by the explosion");
+                GameBoard.State aftermath = GameBoard.parseState(view.receive(MsgType.STATE).body());
+                check(aftermath.balloons().isEmpty() && aftermath.players().stream()
+                        .anyMatch(player -> player.id() == host.id() && player.state() == PlayerState.TRAPPED),
+                        "The state just after the explosion shows the trap and removes the balloon");
+            }
 
             guest.send(MsgType.ROOM_LEAVE, "");
             guest.receive(MsgType.ROOM_LIST);
@@ -115,7 +130,7 @@ public final class LobbySelectionTest {
             host.send(MsgType.ROOM_LEAVE, "");
             host.receive(MsgType.ROOM_LIST);
         }
-        System.out.println("Lobby selection tests passed: validation, shared map, 3-player game start and return");
+        System.out.println("Lobby selection tests passed: validation, shared map, facing, explosion, 3-player start and return");
     }
 
     private static String sharedRoomInfo(Peer first, Peer... others) throws IOException {
@@ -170,6 +185,15 @@ public final class LobbySelectionTest {
 
         void expectError(ErrorCode code) throws IOException {
             check(receive(MsgType.ERROR).body().equals(code.body()), "Expected error " + code);
+        }
+
+        GameBoard.Player receiveFacing(int playerId, Direction facing) throws IOException {
+            for (int i = 0; i < 20; i++) {
+                for (GameBoard.Player player : GameBoard.parseState(receive(MsgType.STATE).body()).players()) {
+                    if (player.id() == playerId && player.facing() == facing) return player;
+                }
+            }
+            throw new AssertionError("No STATE with the expected facing for player " + playerId);
         }
 
         @Override

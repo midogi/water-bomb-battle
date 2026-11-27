@@ -32,7 +32,7 @@ public final class GameState {
     private static final int DART_RANGE = 5;
     private static final ItemType[] DROP_TYPES = ItemType.values();
 
-    public record PlayerView(int userId, int x, int y, PlayerState state) { }
+    public record PlayerView(int userId, int x, int y, PlayerState state, Direction facing) { }
     public record ItemView(Map<ItemType, Integer> inventory, boolean invisible, boolean hasLens) {
         public ItemView {
             inventory = Map.copyOf(inventory);
@@ -140,9 +140,12 @@ public final class GameState {
             playerItems.put(player.userId(), new ItemView(player.items,
                     player.state == PlayerState.ALIVE && tick < player.invisibleUntil, tick < player.lensUntil));
         }
-        return new Snapshot(tick, players.values().stream().map(player ->
-                new PlayerView(player.userId(), player.x, player.y, player.state)).toList(),
+        return new Snapshot(tick, players.values().stream().map(GameState::playerView).toList(),
                 List.copyOf(bombs.values()), finished, groundItems, playerItems);
+    }
+
+    private static PlayerView playerView(ServerPlayer player) {
+        return new PlayerView(player.userId(), player.x, player.y, player.state, player.facing);
     }
 
     /** 경기 시작 때 전체 맵과 플레이어의 시작 좌표를 보낸다. */
@@ -152,16 +155,15 @@ public final class GameState {
         return message(MsgType.GAME_INIT, map.toWire() + "|" + positions);
     }
 
-    /** 매 틱의 위치와 생존 상태, 남은 폭탄 시간을 넘긴다. 폭탄 시간은 틱 단위다. */
+    /** 매 틱의 위치, 생존 상태, 시선 방향과 남은 폭탄 시간을 넘긴다. */
     public Message stateMessage() {
-        Stream<PlayerView> views = players.values().stream().map(player ->
-                new PlayerView(player.userId(), player.x, player.y, player.state));
+        Stream<PlayerView> views = players.values().stream().map(GameState::playerView);
         return message(MsgType.STATE, stateBody(tick, views, bombs.values()));
     }
 
     private static String stateBody(long tick, Stream<PlayerView> players, Collection<Bomb> bombs) {
         String positions = players.map(player ->
-                player.userId() + ":" + player.x() + ":" + player.y() + ":" + player.state())
+                player.userId() + ":" + player.x() + ":" + player.y() + ":" + player.state() + ":" + player.facing())
                 .collect(Collectors.joining(","));
         String bombList = bombs.stream().map(bomb -> bomb.col() + ":" + bomb.row()
                 + ":" + Math.max(0, bomb.explodeAtTick() - tick)).collect(Collectors.joining(","));
@@ -356,8 +358,7 @@ public final class GameState {
 
     private void useItem(ServerPlayer player, ItemType item, List<Message> messages) {
         int count = player.items.getOrDefault(item, 0);
-        PlayerState required = item == ItemType.NEEDLE ? PlayerState.TRAPPED : PlayerState.ALIVE;
-        if (count == 0 || player.state != required) {
+        if (count == 0 || !item.canUseIn(player.state)) {
             return;
         }
         switch (item) {

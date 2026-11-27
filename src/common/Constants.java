@@ -14,6 +14,7 @@ public final class Constants {
     public static final int BOMB_FUSE_TICKS = 60;
     public static final int DEFAULT_BOMB_RANGE = 1;
     public static final int DEFAULT_BOMB_LIMIT = 1;
+    public static final int DEFAULT_MOVE_PIXELS_PER_TICK = 4;
     public static final int TRAPPED_TIMEOUT_TICKS = 100;
     public static final int MAX_FRAME_BYTES = 64 * 1024;
 
