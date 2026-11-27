@@ -19,16 +19,22 @@ final class PlayerPose {
     PlayerPose(GameBoard.Player player) {
         lastX = player.x();
         lastY = player.y();
+        if (player.facing() != null) facing = player.facing();
     }
 
-    /** 내 캐릭터와 상대 모두 실제 좌표 차이로 방향을 정한다. 멈추면 마지막 방향만 남긴다. */
+    /** 방향은 STATE에서 받고, 걸음 애니메이션은 실제 좌표가 바뀔 때 재생한다. */
     void update(GameBoard.Player player, long now) {
         int dx = player.x() - lastX;
         int dy = player.y() - lastY;
         boolean moved = dx != 0 || dy != 0;
-        if (moved) {
+        if (player.facing() != null) {
+            facing = player.facing();
+        } else if (moved) {
+            // 방향 필드가 없는 예전 STATE는 이동한 쪽을 바라본다.
             if (Math.abs(dx) > Math.abs(dy)) facing = dx > 0 ? Direction.RIGHT : Direction.LEFT;
             else facing = dy > 0 ? Direction.DOWN : Direction.UP;
+        }
+        if (moved) {
             if (!walking) walkStarted = now;
             lastMovement = now;
         }

@@ -25,6 +25,7 @@ public class LobbyPanel extends CoastPanel {
     private final JList<RoomSummary> roomList = new JList<>(roomModel);
     private final JButton createButton = new JButton("방 만들기");
     private final JButton joinButton = new JButton("입장");
+    private boolean requestPending;
 
     /** MainFrame이 로비를 만들 때 방 목록과 버튼을 준비한다. 버튼의 결과는 RoomListener에 전달한다. */
     LobbyPanel(RoomListener listener, Consumer<String> sendChat, Consumer<RoomEmoji> sendEmoji) {
@@ -62,6 +63,7 @@ public class LobbyPanel extends CoastPanel {
         rooms.add(header, BorderLayout.NORTH);
 
         roomList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        roomList.addListSelectionListener(event -> refreshJoinButton());
         JScrollPane scroll = new JScrollPane(roomList);
         rooms.add(scroll, BorderLayout.CENTER);
         rooms.add(roomStatusLabel, BorderLayout.SOUTH);
@@ -74,11 +76,7 @@ public class LobbyPanel extends CoastPanel {
         createButton.addActionListener(event -> requestCreate(listener));
         joinButton.addActionListener(event -> {
             RoomSummary room = roomList.getSelectedValue();
-            if (room == null) {
-                JOptionPane.showMessageDialog(this, "입장할 방을 먼저 선택해 주세요.");
-                return;
-            }
-            listener.joinRequested(room);
+            if (!requestPending && room != null && room.isJoinable()) listener.joinRequested(room);
         });
         setRooms(List.of());
     }
@@ -125,13 +123,20 @@ public class LobbyPanel extends CoastPanel {
     /** 로그인 직후 방 목록 응답을 기다릴 때 호출한다. 응답을 받기 전과 방이 실제로 없는 경우를 구분한다. */
     public void showLoading() {
         roomModel.clear();
+        refreshJoinButton();
         roomStatusLabel.setText("방 목록을 불러오는 중입니다.");
     }
 
     /** MainFrame이 방 요청을 보내거나 거절을 받았을 때 호출해 생성·입장 버튼을 함께 잠그거나 푼다. */
     void setRequestPending(boolean pending) {
+        requestPending = pending;
         createButton.setEnabled(!pending);
-        joinButton.setEnabled(!pending);
+        refreshJoinButton();
+    }
+
+    private void refreshJoinButton() {
+        RoomSummary room = roomList.getSelectedValue();
+        joinButton.setEnabled(!requestPending && room != null && room.isJoinable());
     }
 
     /** ROOM_LIST에서 읽은 방으로 목록을 갱신한다. 이전에 선택한 방이 남아 있으면 같은 번호를 다시 선택한다. */
@@ -147,5 +152,6 @@ public class LobbyPanel extends CoastPanel {
         }
         roomStatusLabel.setText(rooms.isEmpty() ? "현재 개설된 방이 없습니다."
                 : "현재 개설된 방: " + rooms.size() + "개");
+        refreshJoinButton();
     }
 }

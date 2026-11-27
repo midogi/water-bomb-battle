@@ -1,6 +1,7 @@
 package client.game;
 
 import common.Constants;
+import common.model.Direction;
 import common.model.PlayerState;
 import java.util.ArrayList;
 import java.util.List;
@@ -8,7 +9,11 @@ import java.util.List;
 // GAME_INIT에서 만든 게임판이다. STATE가 오면 참가자 목록을, BOX_BREAK가 오면 해당 타일을 바꾼 새 GameBoard를 사용한다.
 public record GameBoard(String tiles, List<Player> players) {
     /** x와 y는 캐릭터가 차지하는 영역의 왼쪽 위 픽셀 좌표다. */
-    public record Player(int id, int x, int y, PlayerState state) { }
+    public record Player(int id, int x, int y, PlayerState state, Direction facing) {
+        public Player(int id, int x, int y, PlayerState state) {
+            this(id, x, y, state, null);
+        }
+    }
 
     /** GAME_INIT 본문에서 맵 크기와 타일 문자를 검사하고, 게임 화면에 처음 그릴 맵과 참가자를 만든다. */
     public static GameBoard parse(String body) {
@@ -74,11 +79,15 @@ public record GameBoard(String tiles, List<Player> players) {
         }
         for (String row : body.split(",")) {
             String[] fields = row.split(":", -1);
-            if (fields.length != (includesState ? 4 : 3)) {
+            if (includesState ? fields.length != 4 && fields.length != 5 : fields.length != 3) {
                 throw new IllegalArgumentException("플레이어 좌표 형식을 확인해 주세요.");
             }
+            Direction facing = fields.length == 5 ? Direction.valueOf(fields[4]) : null;
+            if (facing == Direction.STOP) {
+                throw new IllegalArgumentException("플레이어가 보는 방향을 확인해 주세요.");
+            }
             players.add(new Player(Integer.parseInt(fields[0]), Integer.parseInt(fields[1]),
-                    Integer.parseInt(fields[2]), includesState ? PlayerState.valueOf(fields[3]) : PlayerState.ALIVE));
+                    Integer.parseInt(fields[2]), includesState ? PlayerState.valueOf(fields[3]) : PlayerState.ALIVE, facing));
         }
         return List.copyOf(players);
     }

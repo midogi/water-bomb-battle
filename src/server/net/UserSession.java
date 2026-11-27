@@ -54,10 +54,14 @@ public final class UserSession{
      }
 
     public boolean send(Message message) {
+        return send(message, false);
+    }
+
+    public boolean send(Message message, boolean criticalState) {
         if (closed) {
             return false;
         }
-        if(message.type()==MsgType.STATE && outbox.size() >= STATE_SKIP_THRESHOLD) {
+        if(message.type()==MsgType.STATE && !criticalState && outbox.size() >= STATE_SKIP_THRESHOLD) {
             return true;
         }
         if (!outbox.offer(message)){

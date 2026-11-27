@@ -5,8 +5,10 @@ import common.model.ItemType;
 import common.model.PlayerState;
 import java.awt.*;
 import java.util.EnumMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 import javax.swing.*;
 
@@ -23,7 +25,11 @@ public final class MatchScreen extends JPanel {
     private static final int ITEM_EXIT_GAP = 32;
     private final Map<ItemType, JLabel> itemSlots = new EnumMap<>(ItemType.class);
     private final JButton leave = new JButton("나가기");
-    private boolean dartAvailable;
+    private final Set<Integer> heldDartKeys = new HashSet<>();
+    private Map<ItemType, Integer> inventory = Map.of();
+    private PlayerState myState;
+    private boolean invisible;
+    private boolean lensActive;
     private boolean finished;
     private int myId;
 
@@ -63,11 +69,15 @@ public final class MatchScreen extends JPanel {
             JPanel inventory = new JPanel(new GridLayout(0, 1, 0, 3));
             inventory.setOpaque(false);
             inventory.setBorder(BorderFactory.createEmptyBorder(0, 0, ITEM_EXIT_GAP, 0));
+            JLabel pickupHint = new JLabel("캐릭터 중심으로 줍기");
+            pickupHint.setFont(pickupHint.getFont().deriveFont(11f));
+            inventory.add(pickupHint);
             for (ItemArt art : ItemArt.values()) {
                 JLabel slot = new JLabel("", art.slotIcon, SwingConstants.LEADING);
                 slot.setOpaque(true);
                 slot.setBackground(new Color(242, 249, 245));
                 slot.setBorder(BorderFactory.createEmptyBorder(1, 4, 1, 2));
+                slot.setToolTipText(art.type == ItemType.NEEDLE ? "물방울에 갇혔을 때 사용" : "움직일 수 있을 때 사용");
                 itemSlots.put(art.type, slot);
                 inventory.add(slot);
                 bindItemKey(art, onItem);
@@ -80,6 +90,7 @@ public final class MatchScreen extends JPanel {
         leave.addActionListener(e -> {
             leave.setEnabled(false);
             board.setEnabled(false);
+            refreshInventory();
             onLeave.run();
         });
     }
@@ -91,10 +102,13 @@ public final class MatchScreen extends JPanel {
         result.setVisible(false);
         leave.setEnabled(true);
         board.setEnabled(true);
+        heldDartKeys.clear();
+        myState = null;
         statuses.clear();
         departed.clear();
         members.removeAll();
         for (GameBoard.Player player : initial.players()) {
+            if (player.id() == myId) myState = player.state();
             GamePanel.Appearance look = appearances.get(player.id());
             String name = look == null ? "참가자 " + player.id() : look.nickname();
             JLabel nickname = new JLabel();
@@ -122,6 +136,13 @@ public final class MatchScreen extends JPanel {
     }
 
     public void updateInventory(Map<ItemType, Integer> inventory, boolean invisible, boolean lensActive) {
+        this.inventory = Map.copyOf(inventory);
+        this.invisible = invisible;
+        this.lensActive = lensActive;
+        refreshInventory();
+    }
+
+    private void refreshInventory() {
         for (var entry : itemSlots.entrySet()) {
             ItemArt art = ItemArt.forType(entry.getKey());
             int count = inventory.getOrDefault(art.type, 0);
@@ -129,10 +150,14 @@ public final class MatchScreen extends JPanel {
                     || (art.type == ItemType.LENS && lensActive);
             JLabel slot = entry.getValue();
             slot.setText(art.key + "  " + art.name + " ×" + count + (active ? " · 사용 중" : ""));
-            slot.setEnabled(!finished && (count > 0 || active));
-            if (art.type == ItemType.DART) dartAvailable = count > 0;
-            else getActionMap().get(art.type).setEnabled(!finished && count > 0);
+            boolean usable = canUseItem(art.type);
+            slot.setEnabled(usable);
+            if (art.type != ItemType.DART) getActionMap().get(art.type).setEnabled(usable);
         }
+    }
+
+    private boolean canUseItem(ItemType type) {
+        return board.isEnabled() && !finished && type.canUseIn(myState) && inventory.getOrDefault(type, 0) > 0;
     }
 
     /** 숫자를 뗄 때 한 번만 요청해 키를 길게 눌러도 여러 개가 연달아 소모되지 않게 한다. */
@@ -147,14 +172,13 @@ public final class MatchScreen extends JPanel {
         getActionMap().put(art.type, new AbstractAction() {
             @Override
             public void actionPerformed(java.awt.event.ActionEvent event) {
-                if (board.isEnabled() && !finished) onItem.accept(art.type);
+                if (canUseItem(art.type)) onItem.accept(art.type);
             }
         });
     }
 
     /** 다트는 키를 누르는 순간 발사하고, 손을 떼기 전까지 자동 반복 입력을 무시한다. */
     private void bindDartPress(InputMap keys, Consumer<ItemType> onItem) {
-        java.util.Set<Integer> held = new java.util.HashSet<>();
         for (int key : new int[]{java.awt.event.KeyEvent.VK_4, java.awt.event.KeyEvent.VK_NUMPAD4}) {
             String press = "dart-press-" + key;
             String release = "dart-release-" + key;
@@ -162,16 +186,16 @@ public final class MatchScreen extends JPanel {
             keys.put(KeyStroke.getKeyStroke(key, 0, true), release);
             getActionMap().put(press, new AbstractAction() {
                 public void actionPerformed(java.awt.event.ActionEvent e) {
-                    if (held.add(key) && board.isEnabled() && !finished && dartAvailable)
+                    if (heldDartKeys.add(key) && canUseItem(ItemType.DART))
                         onItem.accept(ItemType.DART);
                 }
             });
             getActionMap().put(release, new AbstractAction() {
-                public void actionPerformed(java.awt.event.ActionEvent e) { held.remove(key); }
+                public void actionPerformed(java.awt.event.ActionEvent e) { heldDartKeys.remove(key); }
             });
         }
         board.addFocusListener(new java.awt.event.FocusAdapter() {
-            public void focusLost(java.awt.event.FocusEvent e) { held.clear(); }
+            public void focusLost(java.awt.event.FocusEvent e) { heldDartKeys.clear(); }
         });
     }
 
@@ -194,10 +218,14 @@ public final class MatchScreen extends JPanel {
     /** 서버가 확정한 참가자 상태를 명단과 게임판에 함께 반영한다. 종료 후에는 최종 결과를 유지한다. */
     public void updateState(GameBoard.State state) {
         if (finished) return;
+        PlayerState previous = myState;
+        myState = null;
         for (GameBoard.Player player : state.players()) {
+            if (player.id() == myId) myState = player.state();
             JLabel label = statuses.get(player.id());
             if (label != null && !departed.contains(player.id())) label.setText(stateName(player.state()));
         }
+        if (myState != previous) refreshInventory();
         board.updateState(state);
     }
 
@@ -210,11 +238,9 @@ public final class MatchScreen extends JPanel {
         if (!draw && statuses.keySet().stream().noneMatch(id -> id.toString().equals(winner))) return;
         boolean won = winner.equals(Integer.toString(myId));
         finished = true;
+        board.playPendingEffects();
         board.setEnabled(false);
-        itemSlots.forEach((type, slot) -> {
-            slot.setEnabled(false);
-            if (type != ItemType.DART) getActionMap().get(type).setEnabled(false);
-        });
+        refreshInventory();
         result.setIcon(draw ? null : won ? WIN : LOSE);
         result.setText(draw ? "무승부" : "");
         result.getAccessibleContext().setAccessibleName(draw ? "무승부" : won ? "승리" : "패배");

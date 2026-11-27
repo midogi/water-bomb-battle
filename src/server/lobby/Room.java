@@ -30,9 +30,8 @@ public final class Room{
     private ArenaMap selectedMap; // null은 경기 시작 때 추첨하는 랜덤 선택이다.
     private int hostId;
     private boolean playing;
+    private boolean stateHasEvents;
     private GameLoop game;
-
-    private static final int MOVE_PIXELS_PER_TICK = 4;
 
     Room(int id, String title, UserSession host){
         this.id = id;
@@ -190,7 +189,8 @@ public final class Room{
 
     public synchronized void startGame(int userId, Runnable afterResult) throws LobbyException{
         checkStart(userId);
-        GameState state = GameState.arena(id, ArenaMap.forMatch(selectedMap), new ArrayList<>(members.keySet()), MOVE_PIXELS_PER_TICK);
+        GameState state = GameState.arena(id, ArenaMap.forMatch(selectedMap),
+                new ArrayList<>(members.keySet()), Constants.DEFAULT_MOVE_PIXELS_PER_TICK);
         GameLoop loop = new GameLoop(state, message -> {
             onGameMessage(message);
             // 현재 방의 잠금을 놓은 뒤 전체 방을 조회해야 다른 방과 서로 기다리지 않는다.
@@ -198,6 +198,7 @@ public final class Room{
         });
         game = loop;
         lastItemStates.clear();
+        stateHasEvents = false;
         playing = true;
         // 화면이 캐릭터와 맵을 받은 다음 GAME_INIT으로 넘어가게 한다.
         broadcastInfo();
@@ -230,16 +231,18 @@ public final class Room{
     private synchronized void onGameMessage(Message message) {
         if (game == null) return;
         if (message.type() == MsgType.STATE) {
-            broadcastGameState(game.snapshot());
+            broadcastGameState(game.snapshot(), stateHasEvents);
+            stateHasEvents = false;
             return;
         }
+        if (message.type() == MsgType.EVENT || message.type() == MsgType.PLAYER_LEFT) stateHasEvents = true;
         broadcast(message);
         if (message.type() == MsgType.RESULT) {
             finishGame();
         }
     }
 
-    private void broadcastGameState(GameState.Snapshot snapshot) {
+    private void broadcastGameState(GameState.Snapshot snapshot, boolean hasEvents) {
         var ground = snapshot.groundItems().entrySet().stream()
                 .map(entry -> new ItemState.GroundItem(entry.getKey().col(), entry.getKey().row(), entry.getValue()))
                 .sorted(Comparator.comparingInt(ItemState.GroundItem::row).thenComparingInt(ItemState.GroundItem::col))
@@ -252,7 +255,8 @@ public final class Room{
             if (!items.equals(lastItemStates.put(userId, items))) {
                 member.send(new Message(MsgType.ITEM_STATE, id, userId, items.toWire()));
             }
-            member.send(new Message(MsgType.STATE, id, 0, snapshot.stateBodyFor(userId)));
+            // 폭발이나 아이템 사용이 있던 틱의 상태는 효과와 함께 그릴 수 있도록 생략하지 않는다.
+            member.send(new Message(MsgType.STATE, id, 0, snapshot.stateBodyFor(userId)), hasEvents || snapshot.finished());
         }
     }
 
